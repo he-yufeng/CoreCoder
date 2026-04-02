@@ -155,10 +155,10 @@ quit             退出
 
 ## License
 
-MIT。Fork 它，学它，拿去造更好的东西。
+MIT。Fork，然后拿去造更好的东西，如果能标注此出处就更好了。
 
 ---
 
 作者 **[何宇峰](https://github.com/he-yufeng)** · Agentic AI Researcher @ Moonshot AI (Kimi)
 
-[Claude Code 源码分析（知乎 17 万阅读）](https://zhuanlan.zhihu.com/p/1898797658343862272)
+[Claude Code 源码分析（知乎 17 万阅读，6000收藏）](https://zhuanlan.zhihu.com/p/1898797658343862272)
