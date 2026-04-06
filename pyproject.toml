@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "nanocoderagent"
-version = "0.1.0"
-description = "Minimal AI coding agent (~1300 LoC) inspired by Claude Code. Works with any LLM."
+name = "corecoder"
+version = "0.2.0"
+description = "Minimal AI coding agent (~1300 LoC) inspired by Claude Code. Works with any LLM. (formerly NanoCoder)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -29,15 +29,15 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["nanocoder"]
+packages = ["corecoder"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 
 [project.scripts]
-nanocoder = "nanocoder.cli:main"
+corecoder = "corecoder.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/he-yufeng/NanoCoder"
-Repository = "https://github.com/he-yufeng/NanoCoder"
-Issues = "https://github.com/he-yufeng/NanoCoder/issues"
+Homepage = "https://github.com/he-yufeng/CoreCoder"
+Repository = "https://github.com/he-yufeng/CoreCoder"
+Issues = "https://github.com/he-yufeng/CoreCoder/issues"

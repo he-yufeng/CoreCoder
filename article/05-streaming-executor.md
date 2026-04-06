@@ -173,17 +173,17 @@ async scheduleExecution(block, input) {
 
 ---
 
-## NanoCoder 的折中方案
+## CoreCoder 的折中方案
 
 完整的流式工具解析在 OpenAI 兼容 API 上实现有两个困难：
 
 1. OpenAI 的流式事件格式跟 Anthropic 不完全一样——tool_call 的 delta 格式不同
 2. 不同 provider 的流式行为差异很大，有些（比如 Ollama）会一次性把所有 tool_calls 在最后吐出来
 
-所以 NanoCoder 选了一个折中方案：不在流中解析工具，但当 LLM 一次返回多个 tool_calls 时，用 `concurrent.futures.ThreadPoolExecutor` 并行执行。
+所以 CoreCoder 选了一个折中方案：不在流中解析工具，但当 LLM 一次返回多个 tool_calls 时，用 `concurrent.futures.ThreadPoolExecutor` 并行执行。
 
 ```python
-# nanocoder/agent.py
+# corecoder/agent.py
 def _exec_tools_parallel(self, tool_calls, on_tool=None):
     for tc in tool_calls:
         if on_tool:
@@ -206,8 +206,8 @@ StreamingToolExecutor 的复杂度（530 行）不在于并行执行本身——
 3. **UI 更新**。每个工具的进度要实时推到终端。并行跑的多个工具的进度信息不能互相覆盖。
 4. **AbortController**。用户按 Ctrl+C 时，所有正在跑的工具都要被正确取消。
 
-这些 edge case 单独处理都不难，但组合在一起就产生了大量的状态管理代码。这也是为什么 NanoCoder 选择了简化实现——完整版的复杂度跟收益不成正比（对于一个 1300 行的教学项目来说）。
+这些 edge case 单独处理都不难，但组合在一起就产生了大量的状态管理代码。这也是为什么 CoreCoder 选择了简化实现——完整版的复杂度跟收益不成正比（对于一个 1300 行的教学项目来说）。
 
 ---
 
-> 本文是 [Claude Code 源码导读](00-index.md) 系列第 5 篇。配套实现：[NanoCoder](https://github.com/he-yufeng/NanoCoder)
+> 本文是 [Claude Code 源码导读](00-index.md) 系列第 5 篇。配套实现：[CoreCoder](https://github.com/he-yufeng/CoreCoder)

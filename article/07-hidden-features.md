@@ -95,4 +95,4 @@ Bridge Mode 让 Claude Code 可以被远程控制——一个在云端运行的 
 
 ---
 
-> 本文是 [Claude Code 源码导读](00-index.md) 系列第 7 篇。配套实现：[NanoCoder](https://github.com/he-yufeng/NanoCoder)
+> 本文是 [Claude Code 源码导读](00-index.md) 系列第 7 篇。配套实现：[CoreCoder](https://github.com/he-yufeng/CoreCoder)

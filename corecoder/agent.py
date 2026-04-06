@@ -1,6 +1,6 @@
 """Core agent loop.
 
-This is the heart of NanoCoder.  The pattern is simple:
+This is the heart of CoreCoder.  The pattern is simple:
 
     user message -> LLM (with tools) -> tool calls? -> execute -> loop
                                       -> text reply? -> return to user

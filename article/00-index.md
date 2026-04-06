@@ -18,11 +18,11 @@
 
 ## 配套项目
 
-这些文章中讨论的核心架构模式，我用 1300 行 Python 做了一个可运行的参考实现：[NanoCoder](https://github.com/he-yufeng/NanoCoder)。代码和文章可以对照着看。
+这些文章中讨论的核心架构模式，我用 1300 行 Python 做了一个可运行的参考实现：[CoreCoder](https://github.com/he-yufeng/CoreCoder)。代码和文章可以对照着看。
 
 ## 完整版
 
-如果你想要更详尽的版本（16 篇、16 万字、覆盖构建系统到 MCP 协议的每个子系统），完整导读在[这里](https://github.com/he-yufeng/NanoCoder/tree/main/docs)。
+如果你想要更详尽的版本（16 篇、16 万字、覆盖构建系统到 MCP 协议的每个子系统），完整导读在[这里](https://github.com/he-yufeng/CoreCoder/tree/main/docs)。
 
 ---
 

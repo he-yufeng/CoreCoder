@@ -1,7 +1,7 @@
 """Session persistence - save and resume conversations.
 
 Claude Code maintains session state via QueryEngine (1295 lines).
-NanoCoder distills this to: JSON dump of messages + model config.
+CoreCoder distills this to: JSON dump of messages + model config.
 """
 
 import json
@@ -9,7 +9,7 @@ import os
 import time
 from pathlib import Path
 
-SESSIONS_DIR = Path.home() / ".nanocoder" / "sessions"
+SESSIONS_DIR = Path.home() / ".corecoder" / "sessions"
 
 
 def save_session(messages: list[dict], model: str, session_id: str | None = None) -> str:

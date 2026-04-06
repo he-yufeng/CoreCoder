@@ -6,7 +6,7 @@ Claude Code uses a 4-layer strategy:
   3. CONTEXT_COLLAPSE - aggressive compression when nearing hard limit
   4. Autocompact    - periodic background compaction
 
-NanoCoder implements the same idea in 3 layers:
+CoreCoder implements the same idea in 3 layers:
   Layer 1 (tool_snip)   - replace verbose tool results with truncated versions
   Layer 2 (summarize)   - LLM-powered summary of old conversation
   Layer 3 (hard_collapse) - last resort: drop everything except summary + recent

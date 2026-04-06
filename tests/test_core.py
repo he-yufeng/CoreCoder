@@ -4,9 +4,9 @@ import os
 import pathlib
 import tempfile
 
-from nanocoder import Agent, LLM, Config, ALL_TOOLS, __version__
-from nanocoder.context import ContextManager, estimate_tokens
-from nanocoder.session import save_session, load_session, list_sessions
+from corecoder import Agent, LLM, Config, ALL_TOOLS, __version__
+from corecoder.context import ContextManager, estimate_tokens
+from corecoder.session import save_session, load_session, list_sessions
 
 
 def test_version():
@@ -22,16 +22,16 @@ def test_public_api_exports():
 
 
 def test_config_from_env():
-    os.environ["NANOCODER_MODEL"] = "test-model"
+    os.environ["CORECODER_MODEL"] = "test-model"
     c = Config.from_env()
     assert c.model == "test-model"
-    del os.environ["NANOCODER_MODEL"]
+    del os.environ["CORECODER_MODEL"]
 
 
 def test_config_defaults():
     # temporarily clear relevant env vars
     saved = {}
-    for k in ["NANOCODER_MODEL", "NANOCODER_MAX_TOKENS"]:
+    for k in ["CORECODER_MODEL", "CORECODER_MAX_TOKENS"]:
         if k in os.environ:
             saved[k] = os.environ.pop(k)
 
@@ -86,7 +86,7 @@ def test_session_save_load():
     assert loaded[0] == msgs
     assert loaded[1] == "test-model"
     # cleanup
-    pathlib.Path.home().joinpath(".nanocoder/sessions/pytest_test_session.json").unlink()
+    pathlib.Path.home().joinpath(".corecoder/sessions/pytest_test_session.json").unlink()
 
 
 def test_session_not_found():

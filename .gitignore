@@ -11,7 +11,7 @@ build/
 venv/
 .mypy_cache/
 .ruff_cache/
-.nanocoder_history
+.corecoder_history
 .DS_Store
 dist/
 .pytest_cache/

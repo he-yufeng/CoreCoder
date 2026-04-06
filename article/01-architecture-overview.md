@@ -136,7 +136,7 @@ src/coordinator/      → 多 Agent 编排
 - 第六篇：多 Agent 协作系统
 - 第七篇：Feature Flag 背后的未发布功能
 
-我还用 1300 行 Python 复刻了这些核心设计模式：[NanoCoder](https://github.com/he-yufeng/NanoCoder)。每篇文章里会对照源码和 NanoCoder 的实现来讲。
+我还用 1300 行 Python 复刻了这些核心设计模式：[CoreCoder](https://github.com/he-yufeng/CoreCoder)。每篇文章里会对照源码和 CoreCoder 的实现来讲。
 
 ---
 
