@@ -75,7 +75,11 @@ def main():
         loaded = load_session(args.resume)
         if loaded:
             agent.messages, loaded_model = loaded
-            console.print(f"[green]Resumed session: {args.resume}[/green]")
+            # restore the model from the saved session unless overridden by CLI
+            if not args.model:
+                agent.llm.model = loaded_model
+                config.model = loaded_model
+            console.print(f"[green]Resumed session: {args.resume} (model: {agent.llm.model})[/green]")
         else:
             console.print(f"[red]Session '{args.resume}' not found.[/red]")
             sys.exit(1)
