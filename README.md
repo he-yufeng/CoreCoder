@@ -154,7 +154,7 @@ quit             Exit
 
 |  | Claude Code | Claw-Code | Aider | CoreCoder |
 |---|---|---|---|---|
-| Code | 512K lines (closed) | 100K+ lines | 50K+ lines | **~1,400 lines** |
+| Code | 512K lines (closed) | 100K+ lines | 50K+ lines | **~950 lines** |
 | Models | Anthropic only | Multi | Multi | **Any OpenAI-compatible** |
 | Readable? | No | Hard | Medium | **One afternoon** |
 | Purpose | Use it | Use it | Use it | **Understand it, build yours** |
