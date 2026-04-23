@@ -163,6 +163,14 @@ quit             退出
 
 我还写了 [7 篇 Claude Code 架构深度导读](article/)：Agent 循环、工具系统、上下文压缩、流式执行、多 Agent、隐藏功能。想知道 CoreCoder 为什么这样设计，从那里开始。
 
+## FAQ
+
+**CoreCoder 支持 Skill / Subagent / MCP 吗？**
+
+不支持，这是刻意的。CoreCoder 只保留可运行的最小核心 —— agent 循环、工具、流式、压缩。Skill、Subagent、MCP、hook、plugin 都是 Claude Code 在上层加的特性；如果 CoreCoder 也全都做了，就不再是一个可读的教学产物。上面的架构导读系列讲了 Claude Code 里这些系统是怎么工作的，你可以照着自己加。
+
+如果你只是想要 Skill，配方很简单：启动时扫 `~/.claude/skills/*.md`，把标题列进 system prompt，让 agent 按名字请求某个 skill，再把那个文件的内容 inline 进对话就行了。
+
 ## License
 
 MIT。Fork，然后拿去造更好的东西，如果能标注此出处就更好了。
