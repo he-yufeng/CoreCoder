@@ -33,6 +33,7 @@ class Config:
     max_tokens: int = 4096
     temperature: float = 0.0
     max_context_tokens: int = 128_000
+    provider: str = "openai"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -52,4 +53,5 @@ class Config:
             max_tokens=int(os.getenv("CORECODER_MAX_TOKENS", "4096")),
             temperature=float(os.getenv("CORECODER_TEMPERATURE", "0")),
             max_context_tokens=int(os.getenv("CORECODER_MAX_CONTEXT", "128000")),
+            provider=os.getenv("CORECODER_PROVIDER", "openai"),
         )

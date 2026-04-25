@@ -12,7 +12,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 
 from .agent import Agent
-from .llm import LLM
+from .llm import LLM, LiteLLM
 from .config import Config
 from .session import save_session, load_session, list_sessions
 from . import __version__
@@ -62,7 +62,8 @@ def main():
         )
         sys.exit(1)
 
-    llm = LLM(
+    llm_cls = LiteLLM if config.provider == "litellm" else LLM
+    llm = llm_cls(
         model=config.model,
         api_key=config.api_key,
         base_url=config.base_url,
