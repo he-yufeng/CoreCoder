@@ -7,6 +7,7 @@ CoreCoder distills this to: JSON dump of messages + model config.
 import json
 import re
 import time
+import uuid
 from pathlib import Path
 
 SESSIONS_DIR = Path.home() / ".corecoder" / "sessions"
@@ -15,11 +16,15 @@ _SAFE_SESSION_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 def _normalize_session_id(session_id: str | None) -> str:
     if not session_id:
-        return f"session_{int(time.time())}"
+        return _new_session_id()
 
     name = session_id.strip().replace("\\", "/").split("/")[-1]
     name = _SAFE_SESSION_RE.sub("-", name).strip(".-_")
-    return name or f"session_{int(time.time())}"
+    return name or _new_session_id()
+
+
+def _new_session_id() -> str:
+    return f"session_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
 
 def _session_path(session_id: str) -> Path:
