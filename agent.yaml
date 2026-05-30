@@ -1,0 +1,39 @@
+spec_version: "0.1.0"
+name: corecoder
+version: 1.0.0
+description: >
+  CoreCoder is a minimal, readable AI coding agent (~1,400 lines of Python)
+  that distils the key architectural patterns from Claude Code into a codebase
+  you can read in a single afternoon. It supports any OpenAI-compatible API
+  endpoint (or LiteLLM for 100+ providers), runs as a REPL or one-shot CLI,
+  handles parallel tool execution, 3-layer context compression, sub-agent
+  spawning, and safe shell execution — all as a teaching blueprint for building
+  your own coding agent.
+license: MIT
+model:
+  preferred: openai:gpt-4o
+  alternatives:
+    - anthropic:claude-opus-4-6
+    - openai:gpt-5
+runtime:
+  max_turns: 100
+  entrypoint: "python -m corecoder"
+skills:
+  - name: read_file
+    description: Read file contents from the working directory
+  - name: edit_file
+    description: Search-and-replace editing with unique-match guarantee and diff output
+  - name: write_file
+    description: Create new files or fully overwrite existing ones
+  - name: bash
+    description: Run shell commands with dangerous-command blocking and directory tracking
+  - name: glob_tool
+    description: Search for files by glob pattern
+  - name: grep
+    description: Search file contents by regex or string
+  - name: sub_agent
+    description: Spawn an isolated sub-agent with its own context window
+compliance:
+  risk_tier: standard
+  supervision:
+    human_in_the_loop: destructive
