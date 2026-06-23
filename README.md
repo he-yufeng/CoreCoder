@@ -195,6 +195,12 @@ If you want Skills specifically, the recipe is small: scan `~/.claude/skills/*.m
 - **[LiteBench](https://github.com/he-yufeng/LiteBench)** — one-command LLM / agent benchmark. Ships 7 built-in tasks (HumanEval/GSM8K/MMLU/...) and YAML-defined custom tasks, with a single-file HTML dashboard.
 - **[RepoWiki](https://github.com/he-yufeng/RepoWiki)** — open-source DeepWiki alternative. `pip install repowiki`, one command to turn any local or GitHub repo into a wiki with dependency graph, architecture diagram, and LLM-generated module pages.
 
+## Related projects
+
+- [AnyCoder](https://github.com/he-yufeng/AnyCoder) — a terminal AI coding agent that works with any LLM
+- [CodeJoust](https://github.com/he-yufeng/CodeJoust) — pit coding agents against the same bug and score the patches
+- [agentcikit](https://github.com/he-yufeng/agentcikit) — CLI tools for AI-agent, MCP, and CI evidence and safety
+
 ## License
 
 MIT. Fork it, learn from it, ship something better. A mention of this project is appreciated.
