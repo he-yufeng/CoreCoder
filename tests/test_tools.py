@@ -69,7 +69,8 @@ def test_bash_truncates_long_output():
 
 # --- read_file ---
 
-def test_read_file(tmp_path):
+def test_read_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     read = get_tool("read_file")
     path = tmp_path / "sample.txt"
     path.write_text("line1\nline2\nline3\n")
@@ -94,29 +95,31 @@ def test_read_file_offset_limit(tmp_path):
 
 # --- write_file ---
 
-def test_write_file():
+def test_write_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     write = get_tool("write_file")
-    path = tempfile.mktemp(suffix=".txt")
-    r = write.execute(file_path=path, content="hello world\n")
+    path = tmp_path / "output.txt"
+    r = write.execute(file_path=str(path), content="hello world\n")
+
     assert "Wrote" in r
-    assert Path(path).read_text() == "hello world\n"
-    os.unlink(path)
+    assert path.read_text() == "hello world\n"
 
 
-def test_write_file_creates_dirs():
+def test_write_file_creates_dirs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     write = get_tool("write_file")
-    path = tempfile.mktemp(suffix=".txt")
-    nested = os.path.join(os.path.dirname(path), "sub", "dir", "file.txt")
-    r = write.execute(file_path=nested, content="nested\n")
-    assert "Wrote" in r
-    assert Path(nested).read_text() == "nested\n"
-    import shutil
-    shutil.rmtree(os.path.join(os.path.dirname(path), "sub"))
+    nested = tmp_path / "sub" / "dir" / "file.txt"
+    r = write.execute(file_path=str(nested), content="nested\n")
 
+    assert "Wrote" in r
+    assert nested.read_text() == "nested\n"
 
 # --- edit_file ---
 
-def test_edit_file_basic(tmp_path):
+def test_edit_file_basic(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     edit = get_tool("edit_file")
     path = tmp_path / "sample.py"
     path.write_text("def foo():\n    return 42\n")
@@ -128,7 +131,8 @@ def test_edit_file_basic(tmp_path):
     assert "return 42" not in content
 
 
-def test_edit_file_not_found_string(tmp_path):
+def test_edit_file_not_found_string(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     edit = get_tool("edit_file")
     path = tmp_path / "sample.py"
     path.write_text("hello\n")
@@ -136,7 +140,8 @@ def test_edit_file_not_found_string(tmp_path):
     assert "not found" in r.lower()
 
 
-def test_edit_file_duplicate_string(tmp_path):
+def test_edit_file_duplicate_string(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     edit = get_tool("edit_file")
     path = tmp_path / "sample.py"
     path.write_text("dup\ndup\n")
@@ -185,3 +190,56 @@ def test_agent_tool_schema():
     s = agent_t.schema()
     assert s["function"]["name"] == "agent"
     assert "task" in s["function"]["parameters"]["properties"]
+# --- workspace sandbox ---
+
+def test_read_file_blocks_outside_workspace(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("secret")
+
+    monkeypatch.chdir(workspace)
+
+    read = get_tool("read_file")
+    result = read.execute(file_path=str(outside))
+
+    assert "outside workspace" in result.lower()
+
+
+def test_write_file_blocks_outside_workspace(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "secret.txt"
+
+    monkeypatch.chdir(workspace)
+
+    write = get_tool("write_file")
+    result = write.execute(file_path=str(outside), content="secret")
+
+    assert "outside workspace" in result.lower()
+    assert not outside.exists()
+
+
+def test_edit_file_blocks_outside_workspace(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("before")
+
+    monkeypatch.chdir(workspace)
+
+    edit = get_tool("edit_file")
+
+    result = edit.execute(
+
+        file_path=str(outside),
+
+        old_string="before",
+
+        new_string="after",
+
+    )
+
+    assert "outside workspace" in result.lower()
+
+    assert outside.read_text() == "before"

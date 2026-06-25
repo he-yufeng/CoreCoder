@@ -1,8 +1,8 @@
 """File creation / overwrite."""
 
-from pathlib import Path
 from .base import Tool
 from .edit import _changed_files
+from .security import resolve_workspace_path
 
 
 class WriteFileTool(Tool):
@@ -28,7 +28,7 @@ class WriteFileTool(Tool):
 
     def execute(self, file_path: str, content: str) -> str:
         try:
-            p = Path(file_path).expanduser().resolve()
+            p = resolve_workspace_path(file_path)
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
             _changed_files.add(str(p))

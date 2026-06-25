@@ -132,7 +132,8 @@ def test_cost_estimation_unknown_model():
 
 # --- Changed files tracking ---
 
-def test_edit_tracks_changed_files(tmp_path):
+def test_edit_tracks_changed_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     from corecoder.tools.edit import _changed_files
     _changed_files.clear()
     edit = get_tool("edit_file")
@@ -143,7 +144,8 @@ def test_edit_tracks_changed_files(tmp_path):
     _changed_files.clear()
 
 
-def test_write_tracks_changed_files(tmp_path):
+def test_write_tracks_changed_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     from corecoder.tools.edit import _changed_files
     _changed_files.clear()
     write = get_tool("write_file")
