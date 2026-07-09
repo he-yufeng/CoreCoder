@@ -78,6 +78,8 @@ _PRICING = {
     "qwen-max": (0.78, 3.9),
     # Moonshot Kimi
     "kimi-k2.5": (0.6, 3),
+    # MiniMax
+    "MiniMax-M3": (0.6, 2.4),
 }
 
 

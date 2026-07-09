@@ -69,6 +69,7 @@ Give it a model and a key and it goes. It speaks the OpenAI-compatible API by de
 |---|---|
 | OpenAI (default `gpt-5.5`) | `OPENAI_API_KEY=sk-...` |
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
+| MiniMax | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.minimax.io/v1 CORECODER_MODEL=MiniMax-M3` |
 | Local Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
 
 Kimi, Qwen and the like are the same two variables; for providers that don't even offer an OpenAI-compatible endpoint, the optional LiteLLM backend (`pip install "corecoder[litellm]"`) routes to a hundred-plus of them. The third essay goes into this in detail. The key can be `export`ed directly or dropped into a `.env` at the project root, which is loaded on startup. Then:

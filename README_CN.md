@@ -69,6 +69,7 @@ pip install -e .
 |---|---|
 | OpenAI（默认 `gpt-5.5`） | `OPENAI_API_KEY=sk-...` |
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
+| MiniMax | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.minimax.io/v1 CORECODER_MODEL=MiniMax-M3` |
 | 本地 Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
 
 Kimi、Qwen 这些同样是改这两个变量；连 OpenAI 兼容接口都不给的 provider，装上可选的 LiteLLM 后端（`pip install "corecoder[litellm]"`）能路由一百多家。第三篇文章把这块讲得更细。key 可以直接 `export`，也可以在项目根目录扔个 `.env`，启动时自动加载。然后：
