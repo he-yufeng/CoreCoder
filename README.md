@@ -69,7 +69,13 @@ Give it a model and a key and it goes. It speaks the OpenAI-compatible API by de
 |---|---|
 | OpenAI (default `gpt-5.5`) | `OPENAI_API_KEY=sk-...` |
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
+| MiniMax (global, OpenAI) | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.minimax.io/v1 CORECODER_MODEL=MiniMax-M3 CORECODER_MAX_CONTEXT=1000000` |
+| MiniMax (China, OpenAI) | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.minimaxi.com/v1 CORECODER_MODEL=MiniMax-M3 CORECODER_MAX_CONTEXT=1000000` |
+| MiniMax (global, Anthropic via LiteLLM) | `CORECODER_API_KEY=sk-... CORECODER_BASE_URL=https://api.minimax.io/anthropic CORECODER_MODEL=anthropic/MiniMax-M3 CORECODER_MAX_CONTEXT=1000000 CORECODER_PROVIDER=litellm` |
+| MiniMax (China, Anthropic via LiteLLM) | `CORECODER_API_KEY=sk-... CORECODER_BASE_URL=https://api.minimaxi.com/anthropic CORECODER_MODEL=anthropic/MiniMax-M3 CORECODER_MAX_CONTEXT=1000000 CORECODER_PROVIDER=litellm` |
 | Local Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
+
+MiniMax-M2.7 is available through the same four endpoints. Replace `MiniMax-M3` with `MiniMax-M2.7` and set `CORECODER_MAX_CONTEXT=204800`; keep the `anthropic/` prefix when using LiteLLM. The Anthropic-compatible examples require `pip install "corecoder[litellm]"`.
 
 Kimi, Qwen and the like are the same two variables; for providers that don't even offer an OpenAI-compatible endpoint, the optional LiteLLM backend (`pip install "corecoder[litellm]"`) routes to a hundred-plus of them. The third essay goes into this in detail. The key can be `export`ed directly or dropped into a `.env` at the project root, which is loaded on startup. Then:
 

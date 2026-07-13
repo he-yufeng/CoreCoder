@@ -69,7 +69,13 @@ pip install -e .
 |---|---|
 | OpenAI（默认 `gpt-5.5`） | `OPENAI_API_KEY=sk-...` |
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
+| MiniMax (global, OpenAI) | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.minimax.io/v1 CORECODER_MODEL=MiniMax-M3 CORECODER_MAX_CONTEXT=1000000` |
+| MiniMax (China, OpenAI) | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.minimaxi.com/v1 CORECODER_MODEL=MiniMax-M3 CORECODER_MAX_CONTEXT=1000000` |
+| MiniMax (global, Anthropic via LiteLLM) | `CORECODER_API_KEY=sk-... CORECODER_BASE_URL=https://api.minimax.io/anthropic CORECODER_MODEL=anthropic/MiniMax-M3 CORECODER_MAX_CONTEXT=1000000 CORECODER_PROVIDER=litellm` |
+| MiniMax (China, Anthropic via LiteLLM) | `CORECODER_API_KEY=sk-... CORECODER_BASE_URL=https://api.minimaxi.com/anthropic CORECODER_MODEL=anthropic/MiniMax-M3 CORECODER_MAX_CONTEXT=1000000 CORECODER_PROVIDER=litellm` |
 | 本地 Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
+
+MiniMax-M2.7 is available through the same four endpoints. Replace `MiniMax-M3` with `MiniMax-M2.7` and set `CORECODER_MAX_CONTEXT=204800`; keep the `anthropic/` prefix when using LiteLLM. The Anthropic-compatible examples require `pip install "corecoder[litellm]"`.
 
 Kimi、Qwen 这些同样是改这两个变量；连 OpenAI 兼容接口都不给的 provider，装上可选的 LiteLLM 后端（`pip install "corecoder[litellm]"`）能路由一百多家。第三篇文章把这块讲得更细。key 可以直接 `export`，也可以在项目根目录扔个 `.env`，启动时自动加载。然后：
 
