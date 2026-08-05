@@ -29,6 +29,7 @@ def _parse_args():
     p.add_argument("--base-url", help="API base URL (default: $OPENAI_BASE_URL)")
     p.add_argument("--api-key", help="API key (default: $OPENAI_API_KEY)")
     p.add_argument("-p", "--prompt", help="One-shot prompt (non-interactive mode)")
+    p.add_argument("--demo", action="store_true", help="Run the offline scripted demo (no API key needed)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
@@ -36,6 +37,11 @@ def _parse_args():
 
 def main():
     args = _parse_args()
+
+    if args.demo:
+        from .demo import run_demo
+        raise SystemExit(run_demo())
+
     config = Config.from_env()
 
     # CLI args override env vars

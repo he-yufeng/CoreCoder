@@ -79,22 +79,8 @@ _PRICING = {
     # Moonshot Kimi
     "kimi-k2.5": (0.6, 3),
     # MiniMax
+    "MiniMax-M3": (0.6, 2.4, 0.12, None),
     "MiniMax-M2.7": (0.3, 1.2, 0.06, 0.375),
-}
-
-
-# tier entries: (maximum input tokens, input, output, cache read, cache write)
-_TIERED_PRICING = {
-    "MiniMax-M3": {
-        "standard": (
-            (512_000, 0.3, 1.2, 0.06, None),
-            (None, 0.6, 2.4, 0.12, None),
-        ),
-        "priority": (
-            (512_000, 0.45, 1.8, 0.09, None),
-            (None, 0.9, 3.6, 0.18, None),
-        ),
-    },
 }
 
 
@@ -107,24 +93,41 @@ def _cost_for_usage(
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
-    service_tier: str = "standard",
 ) -> float | None:
     key = _pricing_key(model)
     pricing = _PRICING.get(key)
-    if pricing:
-        input_rate, output_rate = pricing[:2]
-    else:
-        model_tiers = _TIERED_PRICING.get(key)
-        if not model_tiers:
-            return None
-        tiers = model_tiers.get(service_tier, model_tiers["standard"])
-        _, input_rate, output_rate, _, _ = next(
-            tier for tier in tiers if tier[0] is None or prompt_tokens <= tier[0]
-        )
+    if not pricing:
+        return None
+    input_rate, output_rate = pricing[:2]
     return (
         prompt_tokens * input_rate / 1_000_000
         + completion_tokens * output_rate / 1_000_000
     )
+
+
+class ScriptedLLM:
+    """Deterministic offline LLM for demos and smoke tests.
+
+    Plays back a list of LLMResponse turns, one per chat() call, streaming
+    each turn's content through on_token. Running out of turns is an error,
+    not a silent hang, so a broken loop shows up immediately.
+    """
+
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+
+    def __init__(self, script: list[LLMResponse], model: str = "scripted-demo"):
+        self._turns = list(script)
+        self.model = model
+
+    def chat(self, messages, tools=None, on_token=None) -> LLMResponse:
+        if not self._turns:
+            raise RuntimeError("ScriptedLLM ran out of turns")
+        resp = self._turns.pop(0)
+        if on_token and resp.content:
+            on_token(resp.content)
+        self.total_completion_tokens += len(resp.content.split())
+        return resp
 
 
 class LLM:
@@ -140,9 +143,7 @@ class LLM:
         self.extra = kwargs  # temperature, max_tokens, etc.
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
-        self._estimated_cost = _cost_for_usage(
-            model, 0, 0, kwargs.get("service_tier", "standard")
-        )
+        self._estimated_cost = _cost_for_usage(model, 0, 0)
 
     @property
     def estimated_cost(self) -> float | None:
@@ -153,7 +154,6 @@ class LLM:
             self.model,
             self.total_prompt_tokens,
             self.total_completion_tokens,
-            getattr(self, "extra", {}).get("service_tier", "standard"),
         )
 
     def _record_usage(self, prompt_tokens: int, completion_tokens: int):
@@ -163,7 +163,6 @@ class LLM:
             self.model,
             prompt_tokens,
             completion_tokens,
-            self.extra.get("service_tier", "standard"),
         )
         if request_cost is not None:
             self._estimated_cost = (self._estimated_cost or 0.0) + request_cost
@@ -296,9 +295,7 @@ class LiteLLM(LLM):
         self.extra = kwargs
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
-        self._estimated_cost = _cost_for_usage(
-            model, 0, 0, kwargs.get("service_tier", "standard")
-        )
+        self._estimated_cost = _cost_for_usage(model, 0, 0)
 
     def chat(
         self,

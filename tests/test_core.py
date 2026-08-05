@@ -1,7 +1,5 @@
 """Tests for core modules: config, context, session, imports."""
 
-import pytest
-
 from corecoder import Agent, LLM, Config, ALL_TOOLS, __version__
 from corecoder import session as session_module
 from corecoder.context import ContextManager, estimate_tokens
@@ -152,42 +150,22 @@ def test_cost_estimation_unknown_model():
     assert llm.estimated_cost is None
 
 
-def test_minimax_pricing_registry_preserves_official_tiers():
-    from corecoder.llm import _PRICING, _TIERED_PRICING
+def test_minimax_pricing_registry_preserves_official_rates():
+    from corecoder.llm import _PRICING
 
+    assert _PRICING["MiniMax-M3"] == (0.6, 2.4, 0.12, None)
     assert _PRICING["MiniMax-M2.7"] == (0.3, 1.2, 0.06, 0.375)
-    assert _TIERED_PRICING["MiniMax-M3"] == {
-        "standard": (
-            (512_000, 0.3, 1.2, 0.06, None),
-            (None, 0.6, 2.4, 0.12, None),
-        ),
-        "priority": (
-            (512_000, 0.45, 1.8, 0.09, None),
-            (None, 0.9, 3.6, 0.18, None),
-        ),
-    }
 
 
-@pytest.mark.parametrize(
-    ("model", "prompt_tokens", "service_tier", "expected"),
-    [
-        ("MiniMax-M3", 500_000, "standard", 0.27),
-        ("MiniMax-M3", 600_000, "standard", 0.60),
-        ("MiniMax-M3", 500_000, "priority", 0.405),
-        ("anthropic/MiniMax-M3", 600_000, "priority", 0.90),
-    ],
-)
-def test_minimax_m3_cost_estimation_uses_request_tier(
-    model, prompt_tokens, service_tier, expected
-):
+def test_minimax_m3_cost_estimation_uses_flat_pricing():
     from corecoder.llm import LLM
 
-    llm = LLM.__new__(LLM)
-    llm.model = model
-    llm.total_prompt_tokens = prompt_tokens
-    llm.total_completion_tokens = 100_000
-    llm.extra = {"service_tier": service_tier}
-    assert llm.estimated_cost == pytest.approx(expected)
+    for model in ("MiniMax-M3", "anthropic/MiniMax-M3"):
+        llm = LLM.__new__(LLM)
+        llm.model = model
+        llm.total_prompt_tokens = 500_000
+        llm.total_completion_tokens = 100_000
+        assert llm.estimated_cost == 0.54
 
 
 def test_minimax_m3_cost_tracks_each_request_separately():
@@ -204,7 +182,7 @@ def test_minimax_m3_cost_tracks_each_request_separately():
     llm._record_usage(400_000, 100_000)
 
     assert llm.total_prompt_tokens == 800_000
-    assert llm.estimated_cost == pytest.approx(0.48)
+    assert llm.estimated_cost == 0.96
 
 
 # --- Changed files tracking ---
