@@ -254,6 +254,18 @@ def test_glob_no_match():
     assert "No files" in r
 
 
+def test_glob_nonexistent_path():
+    glob_t = get_tool("glob")
+    r = glob_t.execute(pattern="*.py", path="/nonexistent_dir_abc")
+    assert "not found" in r.lower() or "Error" in r
+
+
+def test_glob_path_is_file():
+    glob_t = get_tool("glob")
+    r = glob_t.execute(pattern="*.py", path=__file__)
+    assert "not a directory" in r.lower()
+
+
 # --- grep ---
 
 def test_grep_finds_pattern():
