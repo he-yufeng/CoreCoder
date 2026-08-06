@@ -120,7 +120,7 @@ def chat(self, user_input):
         results = run_parallel(reply.tool_calls)       # tools requested -> run in parallel
         self.messages += results                       # feed results back, loop again
 
-    return "(hit the round limit)"
+    return "(reached maximum tool-call rounds)"
 ```
 
 That's the whole thing. The core skeleton is about twenty lines; counting parallel execution and the bookkeeping after a Ctrl+C interrupt, maybe forty. Almost everything else in CoreCoder's thousand-odd lines is there to clean up the mess the loop runs into once it meets the real world. `llm.py` ends up the biggest file in the project, not because calling a model is hard, but because a streamed response splinters each tool call's arguments into fragments you have to restitch in order, a provider will hand you half a JSON object or a null `usage` field, and 429s, timeouts, dropped connections and 5xx all need backoff-and-retry while the other 4xx should just raise. That unglamorous grunt work, not the loop, is where the real engineering of taking an agent from demo to delivery actually lives; the third essay follows it down to the line.
@@ -183,6 +183,7 @@ Inside the REPL, `/help` lists everything; these are the ones you'll reach for:
 /tokens          token usage and cost estimate
 /diff            files changed this session
 /save  /sessions save / list sessions
+/reset           clear conversation history
 quit / exit      exit (Ctrl+C cancels the current round)
 ```
 
