@@ -182,6 +182,7 @@ README 只给方向，每条的代码细节第七篇接着讲。挑一个动手�
 /compact         手动压缩上下文
 /tokens          查看 token 用量和费用估算
 /diff            查看本次会话改过的文件
+/reset           clear conversation history
 /save  /sessions 保存 / 列出会话
 quit / exit      退出（Ctrl+C 取消当前回合）
 ```
