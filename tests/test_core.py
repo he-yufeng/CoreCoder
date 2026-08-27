@@ -1,5 +1,7 @@
 """Tests for core modules: config, context, session, imports."""
 
+import tomllib
+from pathlib import Path
 from typing import ClassVar
 
 from corecoder import ALL_TOOLS, LLM, Agent, Config, __version__
@@ -10,7 +12,8 @@ from corecoder.tools import get_tool
 
 
 def test_version():
-    assert __version__ == "0.4.0"
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+    assert __version__ == pyproject["project"]["version"]
 
 
 def test_public_api_exports():
