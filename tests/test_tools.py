@@ -7,7 +7,7 @@ from corecoder.tools import ALL_TOOLS, get_tool
 
 
 def test_tool_count():
-    assert len(ALL_TOOLS) == 7
+    assert len(ALL_TOOLS) == 8
 
 
 def test_all_tools_have_valid_schema():
@@ -326,3 +326,82 @@ def test_agent_tool_schema():
     s = agent_t.schema()
     assert s["function"]["name"] == "agent"
     assert "task" in s["function"]["parameters"]["properties"]
+
+
+# --- todo_write ---
+# fresh instances, not the registry singleton: the list is per-instance state
+
+def test_todo_write_creates_ordered_list():
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    r = todo.execute(tasks=[
+        {"content": "read the failing module", "status": "done"},
+        {"content": "fix the parser", "status": "in_progress"},
+        {"content": "run the tests", "status": "pending"},
+    ])
+    assert "1. [done] read the failing module" in r
+    assert "2. [in_progress] fix the parser" in r
+    assert "3. [pending] run the tests" in r
+
+
+def test_todo_write_replaces_whole_list():
+    """Each call replaces the list outright; nothing is appended or merged."""
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    todo.execute(tasks=[{"content": "old task", "status": "pending"}])
+    todo.execute(tasks=[{"content": "new task", "status": "in_progress"}])
+    rendered = todo.render()
+    assert "new task" in rendered
+    assert "old task" not in rendered
+
+
+def test_todo_write_status_flow():
+    """A task walks pending -> in_progress -> done by rewriting the full list."""
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    todo.execute(tasks=[{"content": "ship it", "status": "pending"}])
+    assert "[pending] ship it" in todo.render()
+    todo.execute(tasks=[{"content": "ship it", "status": "in_progress"}])
+    assert "[in_progress] ship it" in todo.render()
+    todo.execute(tasks=[{"content": "ship it", "status": "done"}])
+    assert "[done] ship it" in todo.render()
+
+
+def test_todo_write_clear():
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    todo.execute(tasks=[{"content": "temp", "status": "pending"}])
+    r = todo.execute(tasks=[])
+    assert "cleared" in r
+    assert todo.render() == ""
+
+
+def test_todo_write_rejects_bad_status():
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    r = todo.execute(tasks=[{"content": "x", "status": "doing"}])
+    assert "invalid status" in r
+    assert "pending" in r  # the error names the valid choices
+
+
+def test_todo_write_rejects_empty_content():
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    assert "content" in todo.execute(tasks=[{"content": "  ", "status": "pending"}])
+    assert "content" in todo.execute(tasks=[{"status": "pending"}])
+    assert "content" in todo.execute(tasks=["not a dict"])
+
+
+def test_todo_write_rejects_non_list():
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    assert "Error" in todo.execute(tasks="just a string")
+
+
+def test_todo_write_bad_call_keeps_old_list():
+    """Validation happens before the swap: a rejected call must not clobber state."""
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    todo.execute(tasks=[{"content": "keep me", "status": "pending"}])
+    todo.execute(tasks=[{"content": "bad", "status": "nope"}])
+    assert "keep me" in todo.render()

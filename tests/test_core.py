@@ -18,7 +18,7 @@ def test_public_api_exports():
     assert Agent is not None
     assert LLM is not None
     assert Config is not None
-    assert len(ALL_TOOLS) == 7
+    assert len(ALL_TOOLS) == 8
 
 
 def test_config_from_env(monkeypatch):
@@ -233,3 +233,42 @@ def test_interrupt_backfills_missing_tool_replies():
     ids = [m["tool_call_id"] for m in replies]
     assert sorted(ids) == ["a", "b"]
     assert ids.count("a") == 1  # the already-answered call wasn't duplicated
+
+
+# --- Task list injection ---
+
+def test_todo_list_is_injected_into_system_context():
+    """After a todo_write call, the next request must carry the list in the system message."""
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    agent = Agent(llm=LLM.__new__(LLM), tools=[todo])
+
+    todo.execute(tasks=[
+        {"content": "fix the bug", "status": "in_progress"},
+        {"content": "add a test", "status": "pending"},
+    ])
+    system = agent._full_messages()[0]["content"]
+    assert "# Current task list" in system
+    assert "1. [in_progress] fix the bug" in system
+    assert "2. [pending] add a test" in system
+
+
+def test_todo_injection_tracks_updates():
+    """The injection is rebuilt every round: updates show, an empty list injects nothing."""
+    from corecoder.tools.todo import TodoWriteTool
+    todo = TodoWriteTool()
+    agent = Agent(llm=LLM.__new__(LLM), tools=[todo])
+
+    todo.execute(tasks=[{"content": "only task", "status": "in_progress"}])
+    todo.execute(tasks=[{"content": "only task", "status": "done"}])
+    system = agent._full_messages()[0]["content"]
+    assert "[done] only task" in system
+    assert "[in_progress] only task" not in system
+
+    todo.execute(tasks=[])
+    assert "# Current task list" not in agent._full_messages()[0]["content"]
+
+
+def test_agent_without_todo_tool_injects_nothing():
+    agent = Agent(llm=LLM.__new__(LLM), tools=[get_tool("read_file")])
+    assert "# Current task list" not in agent._full_messages()[0]["content"]

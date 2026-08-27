@@ -6,6 +6,7 @@ from .edit import EditFileTool
 from .glob_tool import GlobTool
 from .grep import GrepTool
 from .read import ReadFileTool
+from .todo import TodoWriteTool
 from .write import WriteFileTool
 
 ALL_TOOLS = [
@@ -15,6 +16,7 @@ ALL_TOOLS = [
     EditFileTool(),
     GlobTool(),
     GrepTool(),
+    TodoWriteTool(),
     AgentTool(),
 ]
 

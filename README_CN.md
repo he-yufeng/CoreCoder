@@ -38,7 +38,7 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1081 行。连最外层的 CLI、配置、打包一起算，整个包 18 个文件、物理 1714 行、净 1385 行，每个文件都短到能一口气读完。
 
-它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你，86 个测试是绿的。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
+它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你，103 个测试是绿的。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
 代码来自一次公开拆解。公开的源码分析里，Claude Code 这类生产级 agent 暴露出不少关键架构，我挑出最核心的一层，用尽量少的代码诚实地复写了一遍。所以读 CoreCoder，约等于读一份基于公开源码分析的「可运行注释版」：讲的是这类 agent 的核心思路，而它本身只是最小复写，就摆在你机器上，随你拆、随你改。
 
@@ -85,7 +85,7 @@ corecoder -p "给 parse_config() 加错误处理"   # 一次性模式，干完�
 
 ```
 corecoder/
-├── agent.py        agent 主循环 + 并行工具执行       150 行   ← 从这里开始读
+├── agent.py        agent 主循环 + 并行工具执行       162 行   ← 从这里开始读
 ├── llm.py          流式客户端 + 重试 + 成本统计       336 行
 ├── context.py      三层上下文压缩                     210 行
 ├── session.py      会话存盘 / 续聊 + 路径穿越防护      97 行
@@ -99,11 +99,12 @@ corecoder/
     ├── glob_tool.py  文件名匹配                         47 行
     ├── read.py       文件读取                           53 行
     ├── write.py      文件写入                           38 行
+    ├── todo.py       agent 自维护的任务清单            79 行
     ├── agent.py      子 agent 派生                      58 行
     └── base.py       工具基类                           27 行
 ```
 
-七个工具：`bash`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`agent`（派子 agent）。其余都是包在引擎核心外面的 CLI 外壳、配置和打包。
+八个工具：`bash`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`todo_write`（agent 自己维护的任务清单）、`agent`（派子 agent）。其余都是包在引擎核心外面的 CLI 外壳、配置和打包。
 
 ## 一个 while 循环就是 agent 的本体
 
@@ -201,7 +202,7 @@ quit / exit      退出（Ctrl+C 取消当前回合）
 
 ## 贡献 / License
 
-动手之前先跑一遍 `pytest tests/ -q`（87 个测试）、`ruff check` 和 `compileall`，绿了再提。MIT License，欢迎 fork 拿去造更好的东西，能在 README 里留一句出处就更好。
+动手之前先跑一遍 `pytest tests/ -q`（103 个测试）、`ruff check` 和 `compileall`，绿了再提。MIT License，欢迎 fork 拿去造更好的东西，能在 README 里留一句出处就更好。
 
 ---
 

@@ -18,6 +18,7 @@ from .prompt import system_prompt
 from .tools import ALL_TOOLS
 from .tools.agent import AgentTool
 from .tools.base import Tool
+from .tools.todo import TodoWriteTool
 
 
 class Agent:
@@ -41,8 +42,17 @@ class Agent:
             if isinstance(t, AgentTool):
                 t._parent_agent = self
 
+        self._todo = next((t for t in self.tools if isinstance(t, TodoWriteTool)), None)
+
     def _full_messages(self) -> list[dict]:
-        return [{"role": "system", "content": self._system}] + self.messages
+        system = self._system
+        # the task list is re-injected every round, so the model always sees the
+        # current state rather than a stale copy buried in old tool results
+        if self._todo is not None:
+            rendered = self._todo.render()
+            if rendered:
+                system += "\n\n# Current task list\n" + rendered
+        return [{"role": "system", "content": system}] + self.messages
 
     def _tool_schemas(self) -> list[dict]:
         return [t.schema() for t in self.tools]

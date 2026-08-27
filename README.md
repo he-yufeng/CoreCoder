@@ -38,7 +38,7 @@ I've always felt coding agents get talked about as if they were arcane. Strip a 
 
 The engine (loop, model interface, context, tools, sessions) is 1,081 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 18 files: 1,714 physical lines, 1,385 net, every one short enough to read in a single sitting.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. 86 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. 103 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -85,7 +85,7 @@ Laid out flat, the whole project is this big. Skim it before you clone and you'l
 
 ```
 corecoder/
-├── agent.py        agent loop + parallel tool exec       150 lines   ← start here
+├── agent.py        agent loop + parallel tool exec       162 lines   ← start here
 ├── llm.py          streaming client + retry + cost        336 lines
 ├── context.py      three-tier context compaction          210 lines
 ├── session.py      save / resume + path-traversal guard    97 lines
@@ -99,11 +99,12 @@ corecoder/
     ├── glob_tool.py  filename matching                     47 lines
     ├── read.py       file read                             53 lines
     ├── write.py      file write                            38 lines
+    ├── todo.py       agent-maintained task checklist       79 lines
     ├── agent.py      sub-agent spawning                    58 lines
     └── base.py       tool base class                       27 lines
 ```
 
-Seven tools: `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, and `agent` (which spawns a sub-agent). Everything else is the CLI shell, config, and packaging wrapped around that engine core.
+Eight tools: `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `todo_write` (a task checklist the agent maintains for itself), and `agent` (which spawns a sub-agent). Everything else is the CLI shell, config, and packaging wrapped around that engine core.
 
 ## A `while` loop is the whole agent
 
@@ -201,7 +202,7 @@ If working through CoreCoder was useful, here are a few other tools I've built a
 
 ## Contributing / License
 
-Before you send anything, run `pytest tests/ -q` (87 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
+Before you send anything, run `pytest tests/ -q` (103 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
 
 ---
 
