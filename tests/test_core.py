@@ -1,6 +1,6 @@
 """Tests for core modules: config, context, session, imports."""
 
-import tomllib
+import re
 from pathlib import Path
 from typing import ClassVar
 
@@ -12,8 +12,10 @@ from corecoder.tools import get_tool
 
 
 def test_version():
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-    assert __version__ == pyproject["project"]["version"]
+    # regex instead of tomllib: the latter only exists on 3.11+ and CI runs 3.10
+    m = re.search(r'(?m)^version = "([^"]+)"', Path("pyproject.toml").read_text())
+    assert m is not None
+    assert __version__ == m.group(1)
 
 
 def test_public_api_exports():
