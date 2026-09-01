@@ -18,6 +18,38 @@ def test_version():
     assert __version__ == m.group(1)
 
 
+def test_readme_line_counts_are_current():
+    # The LoC numbers are the brand of this repo. If the engine or the
+    # package grows, the README has to move with it, and this test is the
+    # alarm: update the badge and the prose in README.md and README_CN.md.
+    root = Path(__file__).resolve().parent.parent
+    engine_files = [
+        root / "corecoder" / name
+        for name in ("agent.py", "llm.py", "context.py", "session.py")
+    ]
+    engine_files += sorted((root / "corecoder" / "tools").glob("*.py"))
+    package_files = sorted((root / "corecoder").rglob("*.py"))
+
+    def net_lines(path: Path) -> int:
+        return sum(
+            1
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        )
+
+    engine = sum(net_lines(f) for f in engine_files)
+    physical = sum(
+        len(f.read_text(encoding="utf-8").splitlines()) for f in package_files
+    )
+    package_net = sum(net_lines(f) for f in package_files)
+
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"engine-{engine}_LoC" in readme
+    assert f"{len(package_files)} files" in readme
+    assert f"{physical:,} physical lines" in readme
+    assert f"{package_net:,} net" in readme
+
+
 def test_public_api_exports():
     """Users should be able to import key classes from the top-level package."""
     assert Agent is not None
