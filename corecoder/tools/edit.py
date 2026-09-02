@@ -10,6 +10,7 @@ import difflib
 from pathlib import Path
 from typing import ClassVar
 
+from ..checkpoints import record as _record_checkpoint
 from .base import Tool
 
 # track files changed this session for /diff
@@ -67,6 +68,7 @@ class EditFileTool(Tool):
                 )
 
             new_content = content.replace(old_string, new_string, 1)
+            _record_checkpoint(p)
             p.write_text(new_content, encoding="utf-8")
             _changed_files.add(str(p))
 

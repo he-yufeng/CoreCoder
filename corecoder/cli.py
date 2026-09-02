@@ -213,6 +213,13 @@ def _repl(agent: Agent, config: Config):
                 for f in sorted(_changed_files):
                     console.print(f"  [cyan]{f}[/cyan]")
             continue
+        if user_input == "/undo":
+            from .checkpoints import pending, undo
+            console.print(undo())
+            left = pending()
+            if left:
+                console.print(f"[dim]{left} more checkpoint(s) on the stack.[/dim]")
+            continue
         if user_input == "/sessions":
             sessions = list_sessions()
             if not sessions:
@@ -261,6 +268,7 @@ def _show_help():
         "  /tokens        Show token usage\n"
         "  /compact       Compress conversation context\n"
         "  /diff          Show files modified this session\n"
+        "  /undo          Revert the most recent file change\n"
         "  /save          Save session to disk\n"
         "  /sessions      List saved sessions\n"
         "  quit           Exit CoreCoder\n"
