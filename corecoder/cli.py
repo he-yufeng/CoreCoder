@@ -15,6 +15,7 @@ from . import __version__
 from .agent import Agent
 from .config import Config
 from .llm import LLM, LiteLLM
+from .permissions import Permission
 from .session import list_sessions, load_session, save_session
 
 console = Console()
@@ -29,6 +30,7 @@ def _parse_args():
     p.add_argument("--base-url", help="API base URL (default: $OPENAI_BASE_URL)")
     p.add_argument("--api-key", help="API key (default: $OPENAI_API_KEY)")
     p.add_argument("-p", "--prompt", help="One-shot prompt (non-interactive mode)")
+    p.add_argument("--yes", action="store_true", help="Auto-approve every tool call (for scripts and CI)")
     p.add_argument("--demo", action="store_true", help="Run the offline scripted demo (no API key needed)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
@@ -76,7 +78,14 @@ def main():
         temperature=config.temperature,
         max_tokens=config.max_tokens,
     )
-    agent = Agent(llm=llm, max_context_tokens=config.max_context_tokens)
+    # consent layer: ask in the REPL, refuse in one-shot mode, --yes skips it
+    if args.yes:
+        permission = Permission(allow_all=True)
+    elif args.prompt:
+        permission = Permission()
+    else:
+        permission = Permission(ask=_ask_permission)
+    agent = Agent(llm=llm, max_context_tokens=config.max_context_tokens, permission=permission)
 
     # resume saved session
     if args.resume:
@@ -101,8 +110,27 @@ def main():
     _repl(agent, config)
 
 
+def _ask_permission(tool_name: str, arguments: dict) -> str:
+    """REPL consent prompt. Anything but a clear yes counts as a no."""
+    console.print(f"\n[bold yellow]permission requested:[/] [cyan]{tool_name}[/cyan]({_brief(arguments)})")
+    try:
+        answer = pt_prompt("  [y] allow once  [a] always allow this tool  [n] deny: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        console.print("[dim]denied[/dim]")
+        return "deny"
+    if answer in ("y", "yes"):
+        return "once"
+    if answer in ("a", "always"):
+        return "always"
+    return "deny"
+
+
 def _run_once(agent: Agent, prompt: str):
     """Non-interactive: run one prompt and exit."""
+    perm = getattr(agent, "permission", None)
+    if perm is not None and perm.ask is None and not perm.allow_all:
+        console.print("[dim]one-shot mode: mutating tools are refused unless you pass --yes[/dim]")
+
     def on_token(tok):
         print(tok, end="", flush=True)
 
@@ -123,10 +151,13 @@ def _run_once(agent: Agent, prompt: str):
 
 def _repl(agent: Agent, config: Config):
     """Interactive read-eval-print loop."""
+    perm = getattr(agent, "permission", None)
+    mode = "auto-approve every tool call (--yes)" if (perm and perm.allow_all) else "ask before mutating tools"
     console.print(Panel(
         f"[bold]CoreCoder[/bold] v{__version__}\n"
         f"Model: [cyan]{config.model}[/cyan]"
         + (f"  Base: [dim]{config.base_url}[/dim]" if config.base_url else "")
+        + f"\nPermissions: [cyan]{mode}[/cyan]"
         + "\nType [bold]/help[/bold] for commands, [bold]Ctrl+C[/bold] to cancel, [bold]quit[/bold] to exit.",
         border_style="blue",
     ))

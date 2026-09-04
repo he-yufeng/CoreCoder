@@ -48,6 +48,8 @@ class AgentTool(Tool):
             tools=[t for t in parent.tools if t.name != "agent"],  # no recursive agents
             max_context_tokens=parent.context.max_tokens,
             max_rounds=20,
+            # the sub-agent answers to the same consent layer as the parent
+            permission=parent.permission,
         )
 
         # a sub-agent failure comes back as text, never propagates into the parent

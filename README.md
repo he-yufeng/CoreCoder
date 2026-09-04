@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. 1,201 lines of pure Python — understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. 1,217 lines of pure Python — understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1201_LoC-blue)](article/00-index_EN.md)
+[![engine](https://img.shields.io/badge/engine-1217_LoC-blue)](article/00-index_EN.md)
 [![essays](https://img.shields.io/badge/source--reading-8_bilingual-orange)](article/00-index_EN.md)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,201 engine / 2,008 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,217 engine / 2,107 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,9 +36,9 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,201 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 21 files: 2,008 physical lines, 1,614 net, every one short enough to read in a single sitting.
+The engine (loop, model interface, context, tools, sessions) is 1,217 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 22 files: 2,107 physical lines, 1,697 net, every one short enough to read in a single sitting.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. 103 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. 119 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -85,12 +85,13 @@ Laid out flat, the whole project is this big. Skim it before you clone and you'l
 
 ```
 corecoder/
-├── agent.py        agent loop + parallel tool exec       162 lines   ← start here
+├── agent.py        agent loop + parallel tool exec       180 lines   ← start here
 ├── llm.py          streaming client + retry + cost        336 lines
 ├── context.py      three-tier context compaction          210 lines
 ├── session.py      save / resume + path-traversal guard    97 lines
+├── permissions.py  consent for mutating tools              48 lines
 ├── prompt.py       system prompt                           33 lines
-├── cli.py          REPL + slash commands + one-shot       270 lines
+├── cli.py          REPL + slash commands + one-shot       317 lines
 ├── config.py       env-var config                          57 lines
 └── tools/
     ├── bash.py       shell + dangerous-command gate + cd  127 lines
@@ -100,7 +101,7 @@ corecoder/
     ├── read.py       file read                             53 lines
     ├── write.py      file write                            38 lines
     ├── todo.py       agent-maintained task checklist       79 lines
-    ├── agent.py      sub-agent spawning                    58 lines
+    ├── agent.py      sub-agent spawning                    63 lines
     └── base.py       tool base class                       27 lines
 ```
 
@@ -191,6 +192,14 @@ quit / exit      exit (Ctrl+C cancels the current round)
 
 Session IDs are sanitized to safe characters before they become filenames, every archive lands under `~/.corecoder/sessions`, and a malicious session name can't traverse out.
 
+## Permissions
+
+Read-only tools (`read_file`, `glob`, `grep`, `todo_write`) run the moment the model asks. The mutating ones (`edit_file`, `write_file`, `bash`, and spawning a sub-agent) stop for consent first, and the REPL banner shows which mode you're in:
+
+- In the REPL you get one prompt per call: allow once, always allow this tool, or deny. "Always" is remembered per tool for the rest of the session, and a sub-agent inherits the same layer, so consent follows the work wherever it happens.
+- In one-shot mode (`-p`) there is nobody to ask, so a mutating call is refused on the spot and the refusal goes back to the model as an ordinary tool result: the loop never hangs on input that can't arrive. Pass `--yes` to approve everything up front (scripts, CI).
+- The decision itself is pure logic in `permissions.py`, with the terminal only supplying the prompt callback. You can unit-test consent without a TTY, or reuse the layer in your own embedding.
+
 ## Related Projects
 
 If working through CoreCoder was useful, here are a few other tools I've built around agents and LLM systems:
@@ -203,7 +212,7 @@ If working through CoreCoder was useful, here are a few other tools I've built a
 
 ## Contributing / License
 
-Before you send anything, run `pytest tests/ -q` (103 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
+Before you send anything, run `pytest tests/ -q` (119 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
 
 ---
 

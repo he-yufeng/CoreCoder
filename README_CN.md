@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**编程 agent 里的 nanoGPT。1201 行纯 Python，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
+**编程 agent 里的 nanoGPT。1217 行纯 Python，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1201_LoC-blue)](article/)
+[![engine](https://img.shields.io/badge/engine-1217_LoC-blue)](article/)
 [![源码导读](https://img.shields.io/badge/源码导读-8篇双语-orange)](article/)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| 代码量 | 引擎约 1201 行 / 整包 2008 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
+| 代码量 | 引擎约 1217 行 / 整包 2107 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
 | 读完要多久 | 一个下午 | 读不了（闭源） | 得啃几天 | 一个下午 |
 | 能不能下断点改了再跑 | 能，每一行 | 不能 | 能，但量大 | 能 |
 | 定位 | 读懂并 fork 出你自己的 agent | 生产级编程助手 | 终端结对编程 | 教学用最小 GPT |
@@ -36,9 +36,9 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 我一直觉得 coding agent 被讲得太玄了。把 Claude Code、Cursor 这类工具扒到底，核心是一个 while 循环套着一个大模型，外加七八个让它能真正动手的工具。难的从来不是这个循环，而是循环跑进真实世界以后要兜的那些底。CoreCoder 就是把这个核心老老实实写出来的最小版本。
 
-引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1201 行。连最外层的 CLI、配置、打包一起算，整个包 21 个文件、物理 2008 行、净 1614 行，每个文件都短到能一口气读完。
+引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1217 行。连最外层的 CLI、配置、打包一起算，整个包 22 个文件、物理 2107 行、净 1697 行，每个文件都短到能一口气读完。
 
-它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你，103 个测试是绿的。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
+它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头，119 个测试是绿的。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
 代码来自一次公开拆解。公开的源码分析里，Claude Code 这类生产级 agent 暴露出不少关键架构，我挑出最核心的一层，用尽量少的代码诚实地复写了一遍。所以读 CoreCoder，约等于读一份基于公开源码分析的「可运行注释版」：讲的是这类 agent 的核心思路，而它本身只是最小复写，就摆在你机器上，随你拆、随你改。
 
@@ -85,12 +85,13 @@ corecoder -p "给 parse_config() 加错误处理"   # 一次性模式，干完�
 
 ```
 corecoder/
-├── agent.py        agent 主循环 + 并行工具执行       162 行   ← 从这里开始读
+├── agent.py        agent 主循环 + 并行工具执行       180 行   ← 从这里开始读
 ├── llm.py          流式客户端 + 重试 + 成本统计       336 行
 ├── context.py      三层上下文压缩                     210 行
 ├── session.py      会话存盘 / 续聊 + 路径穿越防护      97 行
+├── permissions.py  改动类工具的用户授权                48 行
 ├── prompt.py       系统提示词                          33 行
-├── cli.py          REPL + 斜杠命令 + 一次性模式        270 行
+├── cli.py          REPL + 斜杠命令 + 一次性模式        317 行
 ├── config.py       环境变量配置                        57 行
 └── tools/
     ├── bash.py       shell + 危险命令闸 + cd 追踪      127 行
@@ -100,7 +101,7 @@ corecoder/
     ├── read.py       文件读取                           53 行
     ├── write.py      文件写入                           38 行
     ├── todo.py       agent 自维护的任务清单            79 行
-    ├── agent.py      子 agent 派生                      58 行
+    ├── agent.py      子 agent 派生                      63 行
     └── base.py       工具基类                           27 行
 ```
 
@@ -191,6 +192,14 @@ quit / exit      退出（Ctrl+C 取消当前回合）
 
 会话 ID 会先清洗成安全字符再拿去当文件名，存档统统落在 `~/.corecoder/sessions` 里，恶意会话名穿越不出去。
 
+## 权限
+
+只读工具（`read_file`、`glob`、`grep`、`todo_write`）模型一调就跑。会动手的那些（`edit_file`、`write_file`、`bash`，以及派生子 agent）先停下来等你点头，REPL 启动横幅里能看到当前是哪种模式：
+
+- REPL 里每次调用问一次：允许这一次、本工具本次会话都允许、或者拒绝。「都允许」按工具记到会话结束；子 agent 继承同一层授权，活走到哪，许可跟到哪。
+- 一次性模式（`-p`）没人可问，改动类调用当场被拒，拒绝理由作为普通工具结果回给模型：循环绝不会卡在等一个永远不会来的输入上。要全部预授权就加 `--yes`（脚本、CI 场景）。
+- 判断本身是 `permissions.py` 里的纯逻辑，终端只是塞进来一个提问回调。不用 TTY 也能单测授权逻辑，或者直接搬进你自己的嵌入场景。
+
 ## 相关项目
 
 如果你读 CoreCoder 读得还顺，下面几个我做的 agent / LLM 系统方向的工具也许用得上：
@@ -203,7 +212,7 @@ quit / exit      退出（Ctrl+C 取消当前回合）
 
 ## 贡献 / License
 
-动手之前先跑一遍 `pytest tests/ -q`（103 个测试）、`ruff check` 和 `compileall`，绿了再提。MIT License，欢迎 fork 拿去造更好的东西，能在 README 里留一句出处就更好。
+动手之前先跑一遍 `pytest tests/ -q`（119 个测试）、`ruff check` 和 `compileall`，绿了再提。MIT License，欢迎 fork 拿去造更好的东西，能在 README 里留一句出处就更好。
 
 ---
 

@@ -28,9 +28,11 @@ class Agent:
         tools: list[Tool] | None = None,
         max_context_tokens: int = 128_000,
         max_rounds: int = 50,
+        permission=None,
     ):
         self.llm = llm
         self.tools = tools if tools is not None else ALL_TOOLS
+        self.permission = permission
         self._tool_by_name = {t.name: t for t in self.tools}
         self.messages: list[dict] = []
         self.context = ContextManager(max_tokens=max_context_tokens)
@@ -83,7 +85,7 @@ class Agent:
                     tc = resp.tool_calls[0]
                     if on_tool:
                         on_tool(tc.name, tc.arguments)
-                    result = self._exec_tool(tc)
+                    result = self._permit(tc) or self._exec_tool(tc)
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -108,6 +110,13 @@ class Agent:
             self.context.maybe_compress(self.messages, self.llm)
 
         return "(reached maximum tool-call rounds)"
+
+    def _permit(self, tc) -> str | None:
+        """Consent check for one call. None means go ahead; a string is the
+        refusal, returned as the tool result instead of executing."""
+        if self.permission is None:
+            return None
+        return self.permission.check(tc.name, tc.arguments)
 
     def _exec_tool(self, tc) -> str:
         """Execute a single tool call, returning the result string."""
@@ -137,9 +146,18 @@ class Agent:
             if on_tool:
                 on_tool(tc.name, tc.arguments)
 
+        # consent is settled up front on this thread: prompting from pool
+        # workers would interleave several prompts on one terminal
+        results = [self._permit(tc) for tc in tool_calls]
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-            futures = [pool.submit(self._exec_tool, tc) for tc in tool_calls]
-            return [f.result() for f in futures]
+            futures = {
+                i: pool.submit(self._exec_tool, tc)
+                for i, tc in enumerate(tool_calls)
+                if results[i] is None
+            }
+            for i, future in futures.items():
+                results[i] = future.result()
+        return results
 
     def _answer_pending_tool_calls(self, tool_calls):
         """Backfill a tool reply for every call that didn't get one.
