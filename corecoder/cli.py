@@ -192,7 +192,7 @@ def _repl(agent: Agent, config: Config):
     while True:
         try:
             user_input = pt_prompt(
-                "You > ",
+                "You (plan) > " if agent.plan_mode else "You > ",
                 history=history,
                 multiline=True,
                 key_bindings=kb,
@@ -215,6 +215,21 @@ def _repl(agent: Agent, config: Config):
             agent.reset()
             console.print("[yellow]Conversation reset.[/yellow]")
             continue
+        if user_input == "/plan":
+            agent.plan_mode = not agent.plan_mode
+            if agent.plan_mode:
+                console.print(
+                    "[yellow]Plan mode on.[/yellow] The agent can look but not touch: it will "
+                    "investigate read-only and present a plan. Type [bold]approve[/bold] to "
+                    "accept the plan, or [bold]/plan[/bold] again to exit."
+                )
+            else:
+                console.print("[yellow]Plan mode off.[/yellow]")
+            continue
+        if agent.plan_mode and user_input.lower() in ("approve", "/approve"):
+            agent.plan_mode = False
+            console.print("[yellow]Plan mode off.[/yellow]")
+            user_input = "approve"  # the approval itself goes to the model, which then executes
         if user_input == "/tokens":
             p = agent.llm.total_prompt_tokens
             c = agent.llm.total_completion_tokens
@@ -313,6 +328,7 @@ def _show_help():
         "  /compact       Compress conversation context\n"
         "  /diff          Show files modified this session\n"
         "  /undo          Revert the most recent file change\n"
+        "  /plan          Toggle plan mode: read-only, then a plan to approve\n"
         "  /save          Save session to disk\n"
         "  /sessions      List saved sessions\n"
         "  quit           Exit CoreCoder\n"

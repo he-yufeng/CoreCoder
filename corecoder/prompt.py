@@ -3,6 +3,14 @@
 import os
 import platform
 
+# appended to the system prompt only while plan mode is on
+PLAN_MODE_PROMPT = """\
+# Plan mode
+Plan mode is on: the user wants a plan, not changes yet. Investigate with the
+read-only tools only; every mutating call is refused. Once you understand the
+task, present the plan as a numbered list and stop. Do not execute any of it
+until the user approves."""
+
 
 def system_prompt(tools) -> str:
     cwd = os.getcwd()

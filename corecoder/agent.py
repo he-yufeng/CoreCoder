@@ -14,7 +14,8 @@ import inspect
 
 from .context import ContextManager
 from .llm import LLM
-from .prompt import system_prompt
+from .permissions import Permission
+from .prompt import PLAN_MODE_PROMPT, system_prompt
 from .tools import ALL_TOOLS
 from .tools.agent import AgentTool
 from .tools.base import Tool
@@ -40,6 +41,7 @@ class Agent:
         self.context = ContextManager(max_tokens=max_context_tokens)
         self.max_rounds = max_rounds
         self._system = system_prompt(self.tools)
+        self.plan_mode = False  # toggled by /plan; while on, mutating tools are refused
 
         # wire up sub-agent capability
         for t in self.tools:
@@ -50,6 +52,10 @@ class Agent:
 
     def _full_messages(self) -> list[dict]:
         system = self._system
+        # re-injected every round, like the task list below, so a toggle made
+        # between turns takes effect on the very next request
+        if self.plan_mode:
+            system += "\n\n" + PLAN_MODE_PROMPT
         # the task list is re-injected every round, so the model always sees the
         # current state rather than a stale copy buried in old tool results
         if self._todo is not None:
@@ -131,6 +137,14 @@ class Agent:
     def _permit(self, tc) -> str | None:
         """Consent check for one call. None means go ahead; a string is the
         refusal, returned as the tool result instead of executing."""
+        # plan mode outranks consent, even --yes: while it's on nothing mutates
+        if self.plan_mode and tc.name not in Permission.READ_ONLY:
+            return (
+                "Plan mode is on, so this call was refused: plan mode is "
+                "read-only. Do not retry it. Keep investigating with the "
+                "read-only tools, then present the plan and stop. The user can "
+                'approve it by typing "approve", or exit plan mode with /plan.'
+            )
         if self.permission is None:
             return None
         return self.permission.check(tc.name, tc.arguments)
