@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. 1,235 lines of pure Python — understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. 1,150 lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,150 engine / 2,128 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,150 engine / 2,346 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,9 +36,9 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,150 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 23 files: 2,128 physical lines, 1,711 net, every one short enough to read in a single sitting.
+The engine (loop, model interface, context, tools, sessions) is 1,150 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 24 files: 2,346 physical lines, 1,899 net, every one short enough to read in a single sitting.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. 128 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. 140 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -86,27 +86,28 @@ Laid out flat, the whole project is this big. Skim it before you clone and you'l
 ```
 corecoder/
 ├── agent.py        agent loop + parallel tool exec       199 lines   ← start here
-├── llm.py          streaming client + retry + cost        336 lines
+├── llm.py          streaming client + retry + cost        267 lines
 ├── context.py      three-tier context compaction          210 lines
 ├── session.py      save / resume + path-traversal guard    97 lines
 ├── permissions.py  consent for mutating tools              48 lines
 ├── hooks.py        Pre/PostToolUse shell hooks             85 lines
+├── mcp.py          MCP stdio client for external tools    208 lines
 ├── prompt.py       system prompt                           33 lines
-├── cli.py          REPL + slash commands + one-shot       320 lines
-├── config.py       env-var config                          57 lines
+├── cli.py          REPL + slash commands + one-shot       330 lines
+├── config.py       env-var config                          55 lines
 └── tools/
-    ├── bash.py       shell + dangerous-command gate + cd  127 lines
-    ├── edit.py       unique-match search/replace + diff    92 lines
-    ├── grep.py       content search                        79 lines
-    ├── glob_tool.py  filename matching                     47 lines
-    ├── read.py       file read                             53 lines
-    ├── write.py      file write                            38 lines
+    ├── bash.py       shell + dangerous-command gate + cd  131 lines
+    ├── edit.py       unique-match search/replace + diff    96 lines
+    ├── grep.py       content search                        93 lines
+    ├── glob_tool.py  filename matching                     52 lines
+    ├── read.py       file read                             56 lines
+    ├── write.py      file write                            43 lines
     ├── todo.py       agent-maintained task checklist       79 lines
     ├── agent.py      sub-agent spawning                    64 lines
     └── base.py       tool base class                       27 lines
 ```
 
-Eight tools: `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `todo_write` (a task checklist the agent maintains for itself), and `agent` (which spawns a sub-agent). Everything else is the CLI shell, config, and packaging wrapped around that engine core.
+Eight tools: `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `todo_write` (a task checklist the agent maintains for itself), and `agent` (which spawns a sub-agent). Everything else is the CLI shell, config, and packaging wrapped around that engine core. If `~/.corecoder/mcp.json` exists, its MCP servers join the eight as extra `mcp__*` tools; the MCP section below covers it.
 
 ## A `while` loop is the whole agent
 
@@ -173,7 +174,7 @@ Going deeper, the directions are out in the open too. None of the following is i
 - **The dangerous-command blocking in bash is just a regex blacklist.** It guards against slips, not a security sandbox. Facing untrusted input means reaching for seccomp or container isolation. This is the hardest of the four; it goes all the way down to the syscall and isolation layer.
 - **Retry is only exponential backoff.** No fallback model, no hard dollar budget. Follow `llm.py` down and add a fallback model chain plus a stop-on-over-budget gate; the change stays mostly inside that one file.
 - **Sub-agents only run the plainest synchronous execution.** Make it async or a streaming executor and you close the exact gap the fifth essay identifies between this and how production agents stream execution.
-- **No MCP, no RAG.** Wire up MCP to give it the external tool ecosystem, or add retrieval-based code location for big repos. Both are real ways to grow from a minimal core into your own stronger agent.
+- **No RAG, and the MCP client speaks tools only.** Retrieval-based code location for big repos is still open, and `mcp.py` leaves resources and prompts unimplemented on purpose. Either one is a real way to grow from a minimal core into your own stronger agent.
 
 The README only points; the seventh essay picks up the code details for each. Pick one and start; that's the whole reason the core is kept this small.
 
@@ -214,6 +215,20 @@ Drop a `hooks.json` under `~/.corecoder` and your own shell commands run around 
 
 Each hook gets the call as JSON on stdin (`tool_name`, `tool_input`; post hooks also get `tool_response`). The matcher is an exact tool name; empty or `*` fires on every tool. A pre hook can veto the call with exit code 2, and its stderr travels back to the model as the reason so it can route around the block. Post hooks only observe and can never block. A hook that errors or runs past ten seconds is skipped with a warning: hooks assist the loop, they never get to kill it. The whole mechanism is `hooks.py`, and the REPL banner shows how many hooks loaded.
 
+## MCP servers
+
+Drop a `mcp.json` under `~/.corecoder` and tools from any MCP server join the agent over stdio, the same config shape as Claude Code's:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}
+  }
+}
+```
+
+Each configured server starts as a subprocess at launch, handshakes, and lists its tools; every one is registered as `mcp__<server>__<tool>`, so hook matchers and the consent gate treat it exactly like a built-in. MCP tools stay out of the read-only set, meaning the agent asks before running one. The handshake gets fifteen seconds, a call gets sixty, and a server that dies or never answers fails that one call as an ordinary tool result instead of killing the loop. The client speaks the tools slice of the protocol (initialize, tools/list, tools/call) and nothing else, which keeps the whole thing inside `mcp.py` at about 200 lines. With no `mcp.json` there is no MCP and nothing changes.
+
 ## Related Projects
 
 If working through CoreCoder was useful, here are a few other tools I've built around agents and LLM systems:
@@ -226,7 +241,7 @@ If working through CoreCoder was useful, here are a few other tools I've built a
 
 ## Contributing / License
 
-Before you send anything, run `pytest tests/ -q` (128 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
+Before you send anything, run `pytest tests/ -q` (140 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
 
 ---
 

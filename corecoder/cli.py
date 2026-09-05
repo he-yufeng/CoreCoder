@@ -16,8 +16,10 @@ from .agent import Agent
 from .config import Config
 from .hooks import load_hooks
 from .llm import LLM, LiteLLM
+from .mcp import load_mcp_tools
 from .permissions import Permission
 from .session import list_sessions, load_session, save_session
+from .tools import ALL_TOOLS
 
 console = Console()
 
@@ -86,7 +88,13 @@ def main():
         permission = Permission()
     else:
         permission = Permission(ask=_ask_permission)
-    agent = Agent(llm=llm, max_context_tokens=config.max_context_tokens, permission=permission, hooks=load_hooks())
+    agent = Agent(
+        llm=llm,
+        tools=[*ALL_TOOLS, *load_mcp_tools()],
+        max_context_tokens=config.max_context_tokens,
+        permission=permission,
+        hooks=load_hooks(),
+    )
 
     # resume saved session
     if args.resume:
@@ -154,6 +162,7 @@ def _repl(agent: Agent, config: Config):
     """Interactive read-eval-print loop."""
     perm = agent.permission
     mode = "auto-approve every tool call (--yes)" if (perm and perm.allow_all) else "ask before mutating tools"
+    mcp_count = sum(1 for t in agent.tools if t.name.startswith("mcp__"))
     console.print(Panel(
         f"[bold]CoreCoder[/bold] v{__version__}\n"
         f"Model: [cyan]{config.model}[/cyan]"
@@ -161,6 +170,7 @@ def _repl(agent: Agent, config: Config):
         + f"\nPermissions: [cyan]{mode}[/cyan]"
         + (f"\nHooks: [cyan]{len(agent.hooks.pre)} pre, {len(agent.hooks.post)} post[/cyan]"
            " from ~/.corecoder/hooks.json" if agent.hooks else "")
+        + (f"\nMCP: [cyan]{mcp_count} tools[/cyan] from ~/.corecoder/mcp.json" if mcp_count else "")
         + "\nType [bold]/help[/bold] for commands, [bold]Ctrl+C[/bold] to cancel, [bold]quit[/bold] to exit.",
         border_style="blue",
     ))
