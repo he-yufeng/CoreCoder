@@ -29,10 +29,12 @@ class Agent:
         max_context_tokens: int = 128_000,
         max_rounds: int = 50,
         permission=None,
+        hooks=None,
     ):
         self.llm = llm
         self.tools = tools if tools is not None else ALL_TOOLS
         self.permission = permission
+        self.hooks = hooks
         self._tool_by_name = {t.name: t for t in self.tools}
         self.messages: list[dict] = []
         self.context = ContextManager(max_tokens=max_context_tokens)
@@ -85,7 +87,10 @@ class Agent:
                     tc = resp.tool_calls[0]
                     if on_tool:
                         on_tool(tc.name, tc.arguments)
-                    result = self._permit(tc) or self._exec_tool(tc)
+                    result = self._pre_hooks(tc) or self._permit(tc)
+                    if result is None:
+                        result = self._exec_tool(tc)
+                        self._post_hooks(tc, result)
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -110,6 +115,18 @@ class Agent:
             self.context.maybe_compress(self.messages, self.llm)
 
         return "(reached maximum tool-call rounds)"
+
+    def _pre_hooks(self, tc) -> str | None:
+        """PreToolUse hooks, fired before consent. A string return blocks the
+        call and becomes the tool result the model sees; None lets it through."""
+        if self.hooks is None:
+            return None
+        return self.hooks.run_pre(tc.name, tc.arguments)
+
+    def _post_hooks(self, tc, result: str):
+        """PostToolUse hooks observe a finished call; they can never block."""
+        if self.hooks is not None:
+            self.hooks.run_post(tc.name, tc.arguments, result)
 
     def _permit(self, tc) -> str | None:
         """Consent check for one call. None means go ahead; a string is the
@@ -146,9 +163,9 @@ class Agent:
             if on_tool:
                 on_tool(tc.name, tc.arguments)
 
-        # consent is settled up front on this thread: prompting from pool
-        # workers would interleave several prompts on one terminal
-        results = [self._permit(tc) for tc in tool_calls]
+        # hooks and consent are settled up front on this thread: prompting
+        # from pool workers would interleave several prompts on one terminal
+        results = [self._pre_hooks(tc) or self._permit(tc) for tc in tool_calls]
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             futures = {
                 i: pool.submit(self._exec_tool, tc)
@@ -157,6 +174,8 @@ class Agent:
             }
             for i, future in futures.items():
                 results[i] = future.result()
+        for i in futures:
+            self._post_hooks(tool_calls[i], results[i])
         return results
 
     def _answer_pending_tool_calls(self, tool_calls):

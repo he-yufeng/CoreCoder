@@ -14,6 +14,7 @@ from rich.panel import Panel
 from . import __version__
 from .agent import Agent
 from .config import Config
+from .hooks import load_hooks
 from .llm import LLM, LiteLLM
 from .permissions import Permission
 from .session import list_sessions, load_session, save_session
@@ -85,7 +86,7 @@ def main():
         permission = Permission()
     else:
         permission = Permission(ask=_ask_permission)
-    agent = Agent(llm=llm, max_context_tokens=config.max_context_tokens, permission=permission)
+    agent = Agent(llm=llm, max_context_tokens=config.max_context_tokens, permission=permission, hooks=load_hooks())
 
     # resume saved session
     if args.resume:
@@ -158,6 +159,8 @@ def _repl(agent: Agent, config: Config):
         f"Model: [cyan]{config.model}[/cyan]"
         + (f"  Base: [dim]{config.base_url}[/dim]" if config.base_url else "")
         + f"\nPermissions: [cyan]{mode}[/cyan]"
+        + (f"\nHooks: [cyan]{len(agent.hooks.pre)} pre, {len(agent.hooks.post)} post[/cyan]"
+           " from ~/.corecoder/hooks.json" if agent.hooks else "")
         + "\nType [bold]/help[/bold] for commands, [bold]Ctrl+C[/bold] to cancel, [bold]quit[/bold] to exit.",
         border_style="blue",
     ))
