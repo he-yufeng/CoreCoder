@@ -3,7 +3,8 @@
 import os
 import sys
 
-from corecoder.tools import ALL_TOOLS, get_tool
+from corecoder.tools import ALL_TOOLS
+from tests.conftest import get_tool
 
 
 def test_tool_count():

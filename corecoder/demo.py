@@ -13,9 +13,35 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from .agent import Agent
-from .llm import LLMResponse, ScriptedLLM, ToolCall
+from .cli import _brief
+from .llm import LLMResponse, ToolCall
 
 console = Console()
+
+
+class ScriptedLLM:
+    """Deterministic offline LLM for demos and smoke tests.
+
+    Plays back a list of LLMResponse turns, one per chat() call, streaming
+    each turn's content through on_token. Running out of turns is an error,
+    not a silent hang, so a broken loop shows up immediately.
+    """
+
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+
+    def __init__(self, script: list[LLMResponse], model: str = "scripted-demo"):
+        self._turns = list(script)
+        self.model = model
+
+    def chat(self, messages, tools=None, on_token=None) -> LLMResponse:
+        if not self._turns:
+            raise RuntimeError("ScriptedLLM ran out of turns")
+        resp = self._turns.pop(0)
+        if on_token and resp.content:
+            on_token(resp.content)
+        self.total_completion_tokens += len(resp.content.split())
+        return resp
 
 _TASK = (
     "Write a Python function `fib(n)` in fib.py returning the nth Fibonacci "
@@ -60,16 +86,6 @@ def _script(workdir: Path) -> list[LLMResponse]:
     ]
 
 
-def _summarize(args: dict) -> str:
-    parts = []
-    for key, value in args.items():
-        text = str(value)
-        if len(text) > 60:
-            text = text[:57] + "..."
-        parts.append(f"{key}={text}")
-    return " ".join(parts)
-
-
 def run_demo() -> int:
     workdir = Path(tempfile.mkdtemp(prefix="corecoder-demo-"))
     agent = Agent(llm=ScriptedLLM(_script(workdir)))
@@ -77,7 +93,7 @@ def run_demo() -> int:
     console.print(Panel.fit(f"[bold]{_TASK}[/]", title="corecoder demo (offline)"))
     result = agent.chat(
         _TASK,
-        on_tool=lambda name, args: console.print(f"[cyan]tool:[/] {name} {_summarize(args)}"),
+        on_tool=lambda name, args: console.print(f"[cyan]tool:[/] {name} {_brief(args)}"),
     )
     console.print(Panel.fit(Markdown(result), title="final"))
     console.print(f"[dim]workspace kept at {workdir}[/]")

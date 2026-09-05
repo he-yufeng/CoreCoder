@@ -127,7 +127,7 @@ def _ask_permission(tool_name: str, arguments: dict) -> str:
 
 def _run_once(agent: Agent, prompt: str):
     """Non-interactive: run one prompt and exit."""
-    perm = getattr(agent, "permission", None)
+    perm = agent.permission
     if perm is not None and perm.ask is None and not perm.allow_all:
         console.print("[dim]one-shot mode: mutating tools are refused unless you pass --yes[/dim]")
 
@@ -151,7 +151,7 @@ def _run_once(agent: Agent, prompt: str):
 
 def _repl(agent: Agent, config: Config):
     """Interactive read-eval-print loop."""
-    perm = getattr(agent, "permission", None)
+    perm = agent.permission
     mode = "auto-approve every tool call (--yes)" if (perm and perm.allow_all) else "ask before mutating tools"
     console.print(Panel(
         f"[bold]CoreCoder[/bold] v{__version__}\n"

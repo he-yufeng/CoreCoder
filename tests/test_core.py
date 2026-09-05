@@ -8,7 +8,7 @@ from corecoder import ALL_TOOLS, LLM, Agent, Config, __version__
 from corecoder import session as session_module
 from corecoder.context import ContextManager, estimate_tokens
 from corecoder.session import list_sessions, load_session, save_session
-from corecoder.tools import get_tool
+from tests.conftest import get_tool
 
 
 def test_version():

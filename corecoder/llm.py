@@ -81,31 +81,6 @@ _PRICING = {
 }
 
 
-class ScriptedLLM:
-    """Deterministic offline LLM for demos and smoke tests.
-
-    Plays back a list of LLMResponse turns, one per chat() call, streaming
-    each turn's content through on_token. Running out of turns is an error,
-    not a silent hang, so a broken loop shows up immediately.
-    """
-
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-
-    def __init__(self, script: list[LLMResponse], model: str = "scripted-demo"):
-        self._turns = list(script)
-        self.model = model
-
-    def chat(self, messages, tools=None, on_token=None) -> LLMResponse:
-        if not self._turns:
-            raise RuntimeError("ScriptedLLM ran out of turns")
-        resp = self._turns.pop(0)
-        if on_token and resp.content:
-            on_token(resp.content)
-        self.total_completion_tokens += len(resp.content.split())
-        return resp
-
-
 class LLM:
     def __init__(
         self,
@@ -150,7 +125,9 @@ class LLM:
 
         # stream_options is an OpenAI extension; fall back only when the provider
         # rejects the param (400 BadRequest), not on transient errors that
-        # _call_with_retry already exhausted - otherwise we'd double the retries
+        # _call_with_retry already exhausted - otherwise we'd double the retries.
+        # LiteLLM never lands here: drop_params strips it for providers without
+        # support, so the fallback is unreachable on that path
         params["stream_options"] = {"include_usage": True}
         try:
             stream = self._call_with_retry(params)
@@ -164,25 +141,27 @@ class LLM:
         completion_tok = 0
 
         for chunk in stream:
-            # usage info comes in the final chunk
-            if chunk.usage:
+            # usage info comes in the final chunk; getattr-style reads stay safe
+            # across OpenAI SDK objects and litellm's provider-varying shapes
+            usage = getattr(chunk, "usage", None)
+            if usage:
                 # some providers send usage with null fields; coerce to 0 so the
                 # running totals below don't blow up on int + None
-                prompt_tok = chunk.usage.prompt_tokens or 0
-                completion_tok = chunk.usage.completion_tokens or 0
+                prompt_tok = getattr(usage, "prompt_tokens", 0) or 0
+                completion_tok = getattr(usage, "completion_tokens", 0) or 0
 
-            if not chunk.choices:
+            if not getattr(chunk, "choices", None):
                 continue
             delta = chunk.choices[0].delta
 
             # accumulate text
-            if delta.content:
+            if getattr(delta, "content", None):
                 content_parts.append(delta.content)
                 if on_token:
                     on_token(delta.content)
 
             # accumulate tool calls across chunks
-            if delta.tool_calls:
+            if getattr(delta, "tool_calls", None):
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
                     if idx not in tc_map:
@@ -261,79 +240,6 @@ class LiteLLM(LLM):
         self.extra = kwargs
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
-
-    def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-        on_token=None,
-    ) -> LLMResponse:
-        """Send messages via litellm, stream back response, handle tool calls."""
-        params: dict = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-            **self.extra,
-        }
-        if tools:
-            params["tools"] = tools
-
-        # ask for usage stats in the final chunk; litellm drops this for providers
-        # that don't support it (drop_params), so it's safe to always request
-        params["stream_options"] = {"include_usage": True}
-        stream = self._call_with_retry(params)
-
-        content_parts: list[str] = []
-        tc_map: dict[int, dict] = {}
-        prompt_tok = 0
-        completion_tok = 0
-
-        for chunk in stream:
-            usage = getattr(chunk, "usage", None)
-            if usage:
-                prompt_tok = getattr(usage, "prompt_tokens", 0) or 0
-                completion_tok = getattr(usage, "completion_tokens", 0) or 0
-
-            if not getattr(chunk, "choices", None):
-                continue
-            delta = chunk.choices[0].delta
-
-            if getattr(delta, "content", None):
-                content_parts.append(delta.content)
-                if on_token:
-                    on_token(delta.content)
-
-            if getattr(delta, "tool_calls", None):
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in tc_map:
-                        tc_map[idx] = {"id": "", "name": "", "args": ""}
-                    if tc_delta.id:
-                        tc_map[idx]["id"] = tc_delta.id
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            tc_map[idx]["name"] = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            tc_map[idx]["args"] += tc_delta.function.arguments
-
-        parsed: list[ToolCall] = []
-        for idx in sorted(tc_map):
-            raw = tc_map[idx]
-            try:
-                args = json.loads(raw["args"])
-            except (json.JSONDecodeError, KeyError):
-                args = {}
-            parsed.append(ToolCall(id=raw["id"], name=raw["name"], arguments=args))
-
-        self.total_prompt_tokens += prompt_tok
-        self.total_completion_tokens += completion_tok
-
-        return LLMResponse(
-            content="".join(content_parts),
-            tool_calls=parsed,
-            prompt_tokens=prompt_tok,
-            completion_tokens=completion_tok,
-        )
 
     def _call_with_retry(self, params: dict, max_retries: int = 3):
         """Retry on transient errors with exponential backoff via litellm."""

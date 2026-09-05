@@ -2,8 +2,8 @@
 
 import pytest
 
-from corecoder.demo import _script, run_demo
-from corecoder.llm import LLMResponse, ScriptedLLM, ToolCall
+from corecoder.demo import ScriptedLLM, _script, run_demo
+from corecoder.llm import LLMResponse, ToolCall
 
 
 def test_scripted_llm_plays_turns_in_order():

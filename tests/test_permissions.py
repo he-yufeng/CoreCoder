@@ -1,11 +1,12 @@
 """Consent gating for mutating tools: the Permission layer and its wiring."""
 
 from corecoder import Agent
-from corecoder.llm import LLMResponse, ScriptedLLM, ToolCall
+from corecoder.demo import ScriptedLLM
+from corecoder.llm import LLMResponse, ToolCall
 from corecoder.permissions import Permission
-from corecoder.tools import get_tool
 from corecoder.tools.agent import AgentTool
 from corecoder.tools.write import WriteFileTool
+from tests.conftest import get_tool
 
 
 def _write_call(call_id, path):
