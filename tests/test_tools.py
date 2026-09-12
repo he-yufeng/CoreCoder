@@ -3,6 +3,8 @@
 import os
 import sys
 
+import pytest
+
 from corecoder.tools import ALL_TOOLS
 from tests.conftest import get_tool
 
@@ -102,6 +104,64 @@ def test_bash_chained_cd_resolves_sequentially(tmp_path):
         assert bash_mod._local.cwd == os.path.normpath(str(tmp_path / "a" / "b"))
     finally:
         bash_mod._local.cwd = saved
+
+
+@pytest.fixture
+def bash_mod():
+    """The bash tool module, with this thread's tracked cwd cleared for the test."""
+    import corecoder.tools.bash as bash_mod
+
+    saved = getattr(bash_mod._local, "cwd", None)
+    bash_mod._local.cwd = None
+    yield bash_mod
+    bash_mod._local.cwd = saved
+
+
+def test_bash_semicolon_cd_chain_is_tracked(tmp_path, bash_mod):
+    """`cd a; cd b` moves the shell just like `cd a && cd b` does."""
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    bash_mod._update_cwd(f"cd {tmp_path}; cd a; cd b", str(tmp_path))
+    assert bash_mod._local.cwd == os.path.normpath(str(tmp_path / "a" / "b"))
+
+
+def test_bash_cd_after_a_command_in_a_semicolon_chain_is_tracked(tmp_path, bash_mod):
+    """A cd that is not the first statement still counts."""
+    (tmp_path / "a").mkdir()
+    bash_mod._update_cwd(f"ls {tmp_path}; cd a", str(tmp_path))
+    assert bash_mod._local.cwd == os.path.normpath(str(tmp_path / "a"))
+
+
+def test_bash_bare_cd_goes_home(tmp_path, bash_mod):
+    """`cd` on its own moves to $HOME, so the next command starts there."""
+    bash_mod._update_cwd("cd", str(tmp_path))
+    assert bash_mod._local.cwd == os.path.normpath(os.path.expanduser("~"))
+
+
+def test_bash_cd_to_a_missing_dir_is_ignored(tmp_path, bash_mod):
+    """A cd that would fail leaves the tracked cwd where it was."""
+    bash_mod._update_cwd(f"cd {tmp_path}/nope", str(tmp_path))
+    assert bash_mod._local.cwd is None
+
+
+def test_bash_quoted_cd_target_with_spaces(tmp_path, bash_mod):
+    """`cd "my dir"` resolves despite the quotes and the space."""
+    (tmp_path / "my dir").mkdir()
+    bash_mod._update_cwd(f'cd "{tmp_path}/my dir"', str(tmp_path))
+    assert bash_mod._local.cwd == os.path.normpath(str(tmp_path / "my dir"))
+
+
+def test_bash_separators_inside_quotes_are_not_cd(tmp_path, bash_mod):
+    """A `;` or `&&` inside a string literal is data, not a separator."""
+    (tmp_path / "a").mkdir()
+    bash_mod._update_cwd(f'echo "x; cd {tmp_path}/a"; echo "y && cd {tmp_path}/a"', str(tmp_path))
+    assert bash_mod._local.cwd is None
+
+
+def test_bash_cd_in_a_subshell_is_not_tracked(tmp_path, bash_mod):
+    """`(cd a)` runs in a subshell, so the shell that runs next does not move."""
+    (tmp_path / "a").mkdir()
+    bash_mod._update_cwd(f"cd {tmp_path} && (cd a)", str(tmp_path))
+    assert bash_mod._local.cwd == os.path.normpath(str(tmp_path))
 
 
 def test_bash_cwd_is_thread_local(tmp_path):
