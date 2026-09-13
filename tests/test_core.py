@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 from corecoder import ALL_TOOLS, LLM, Agent, Config, __version__
 from corecoder import session as session_module
 from corecoder.context import ContextManager, estimate_tokens
@@ -82,6 +84,23 @@ def test_estimate_tokens():
     t = estimate_tokens(msgs)
     assert t > 0
     assert t < 100
+
+
+def test_estimate_tokens_tiered_by_content():
+    from corecoder.context import _approx_tokens
+
+    prose = "The quick brown fox jumps over the lazy dog. " * 10  # 460 prose chars
+    cjk = "你好世界，这是一段中文。" * 20  # 260 hanzi-ish chars
+    code = 'def f(x):\n    return {"k": [1, 2, 3], "s": "{}"}\n' * 10  # symbol-dense
+
+    # CJK reads near 1.5 chars/token, roughly double the old flat rate
+    assert _approx_tokens(cjk) == pytest.approx(len(cjk) / 1.5, rel=0.1)
+    # prose sits under the old 3-chars rate, symbol soup sits above it
+    assert _approx_tokens(prose) == pytest.approx(len(prose) / 3.4, rel=0.1)
+    assert _approx_tokens(code) == pytest.approx(len(code) / 2.8, rel=0.1)
+    # and every tier still beats the "half the real size" failure the old
+    # estimator had on CJK: a 260-char Chinese chat must not read as 86 tokens
+    assert _approx_tokens(cjk) > 150
 
 
 def test_context_snip():

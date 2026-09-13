@@ -14,15 +14,26 @@ CoreCoder implements the same idea in 3 layers:
 
 from __future__ import annotations
 
+import math
+import re
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .llm import LLM
 
+_CJK_RE = re.compile(r"[一-鿿㐀-䶿豈-﫿　-〿＀-･]")
+_SYMBOL_RE = re.compile(r"[^\w\s]")
+
 
 def _approx_tokens(text: str) -> int:
-    """Rough token count, roughly 3 chars per token for mixed en/zh content."""
-    return len(text) // 3
+    """Rough token count: CJK ~1.5 chars/token, symbol-dense code ~2.8,
+    other prose ~3.4. Flat 3-chars counting reads a Chinese-heavy session at
+    half its real size, so compression would trigger too late; round up."""
+    cjk = len(_CJK_RE.findall(text))
+    rest = len(text) - cjk
+    dense = rest > 0 and len(_SYMBOL_RE.findall(text)) / len(text) > 0.25
+    return math.ceil(cjk / 1.5) + int(rest / (2.8 if dense else 3.4))
 
 
 def estimate_tokens(messages: list[dict]) -> int:
