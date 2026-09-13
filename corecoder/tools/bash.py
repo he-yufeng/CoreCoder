@@ -9,6 +9,7 @@ Claude Code's BashTool is 1,143 lines. This is the distilled version:
 
 import os
 import re
+import shlex
 import subprocess
 import threading
 from typing import ClassVar
@@ -112,20 +113,52 @@ def _check_dangerous(cmd: str) -> str | None:
     return None
 
 
+def _split_statements(command: str) -> list[str]:
+    """Split a command on its unquoted `&&` and `;` statement boundaries.
+
+    Goes through shlex so that a separator inside a string literal — `echo
+    "a; cd b"` — stays quoted data instead of looking like a command break.
+    """
+    try:
+        lexer = shlex.shlex(command, posix=False, punctuation_chars=";&")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:  # unbalanced quotes: keep the line as one statement
+        return [command]
+    statements, current = [], []
+    for token in tokens:
+        if token in (";", "&&"):
+            statements.append(" ".join(current))
+            current = []
+        else:
+            current.append(token)
+    statements.append(" ".join(current))
+    return statements
+
+
 def _update_cwd(command: str, current_cwd: str):
-    """Track directory changes from cd commands, per thread."""
-    # walk each cd in a && chain, resolving relative targets against the dir the
-    # previous cd landed in (not the original cwd) so `cd a && cd b` ends in a/b
+    """Track directory changes from cd commands, per thread.
+
+    Walks every cd in a `&&` / `;` chain, resolving relative targets against
+    the directory the previous cd landed in (not the original cwd), so
+    `cd a && cd b` ends in a/b, and so does `cd a; cd b`. A bare `cd` goes
+    home. A cd inside a subshell (`(cd a)`) is skipped on purpose: it does not
+    move the shell that runs the next command.
+    """
     running = current_cwd
     changed = False
-    for part in command.split("&&"):
-        part = part.strip()
-        if part.startswith("cd "):
-            target = part[3:].strip().strip("'\"")
-            if target:
-                new_dir = os.path.normpath(os.path.join(running, os.path.expanduser(target)))
-                if os.path.isdir(new_dir):
-                    running = new_dir
-                    changed = True
+    for statement in _split_statements(command):
+        words = statement.split()
+        if not words or words[0] != "cd":
+            continue
+        # a bare `cd` goes home; `cd -` needs OLDPWD, which we do not track
+        target = " ".join(words[1:]).strip().strip("'\"") if words[1:] else "~"
+        if not target or target == "-":
+            continue
+        new_dir = os.path.normpath(os.path.join(running, os.path.expanduser(target)))
+        if os.path.isdir(new_dir):
+            running = new_dir
+            changed = True
     if changed:
         _local.cwd = running
