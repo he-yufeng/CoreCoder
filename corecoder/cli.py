@@ -20,6 +20,7 @@ from .mcp import load_mcp_tools
 from .permissions import Permission
 from .session import list_sessions, load_session, save_session
 from .tools import ALL_TOOLS
+from .tools.web_search import web_search_tools
 
 console = Console()
 
@@ -90,7 +91,7 @@ def main():
         permission = Permission(ask=_ask_permission)
     agent = Agent(
         llm=llm,
-        tools=[*ALL_TOOLS, *load_mcp_tools()],
+        tools=[*ALL_TOOLS, *web_search_tools(), *load_mcp_tools()],
         max_context_tokens=config.max_context_tokens,
         permission=permission,
         hooks=load_hooks(),
@@ -171,6 +172,7 @@ def _repl(agent: Agent, config: Config):
         + (f"\nHooks: [cyan]{len(agent.hooks.pre)} pre, {len(agent.hooks.post)} post[/cyan]"
            " from ~/.corecoder/hooks.json" if agent.hooks else "")
         + (f"\nMCP: [cyan]{mcp_count} tools[/cyan] from ~/.corecoder/mcp.json" if mcp_count else "")
+        + ("\nWeb search: [cyan]you_web_search[/cyan] (YDC_API_KEY is set)" if any(t.name == "you_web_search" for t in agent.tools) else "")
         + "\nType [bold]/help[/bold] for commands, [bold]Ctrl+C[/bold] to cancel, [bold]quit[/bold] to exit.",
         border_style="blue",
     ))
