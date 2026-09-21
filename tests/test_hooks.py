@@ -34,7 +34,7 @@ def test_pre_hook_blocks_with_reason_and_the_tool_never_runs(tmp_path):
     asked = []
     agent = _agent(
         tmp_path,
-        Hooks(pre=[{"matcher": "*", "command": f"sh {blocker}"}], post=[]),
+        Hooks(pre=[{"matcher": "*", "command": f"sh {blocker.as_posix()}"}], post=[]),
         permission=Permission(ask=lambda n, a: asked.append(n) or "once"),
     )
 
@@ -55,7 +55,7 @@ def test_pre_hook_passing_lets_the_call_through(tmp_path):
 
 def test_post_hook_observes_the_finished_call(tmp_path):
     marker = tmp_path / "seen.jsonl"
-    agent = _agent(tmp_path, Hooks(pre=[], post=[{"matcher": "*", "command": f"cat >> {marker}"}]))
+    agent = _agent(tmp_path, Hooks(pre=[], post=[{"matcher": "*", "command": f"cat >> {marker.as_posix()}"}]))
 
     assert agent.chat("go") == "done"
     seen = marker.read_text()
@@ -117,8 +117,8 @@ def test_hooks_gate_each_call_of_a_parallel_batch(tmp_path):
         llm=ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="done")]),
         tools=[WriteFileTool()],
         hooks=Hooks(
-            pre=[{"matcher": "*", "command": f"cat >> {pre_log}"}],
-            post=[{"matcher": "*", "command": f"cat >> {post_log}"}],
+            pre=[{"matcher": "*", "command": f"cat >> {pre_log.as_posix()}"}],
+            post=[{"matcher": "*", "command": f"cat >> {post_log.as_posix()}"}],
         ),
     )
 

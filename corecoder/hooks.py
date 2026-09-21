@@ -13,8 +13,11 @@ a warning: hooks assist the loop, they never get to kill it.
 
 import json
 import logging
+import re
 import subprocess
 from pathlib import Path
+
+from .tools.bash import _find_bash
 
 log = logging.getLogger(__name__)
 
@@ -71,9 +74,15 @@ def _fire(hook: dict, payload: dict):
     matcher = hook.get("matcher", "")
     if matcher not in ("", "*", payload["tool_name"]):
         return None
+    bash_exe = _find_bash()
+    cmd_str = hook["command"]
+    if bash_exe and re.match(r"^[a-zA-Z]:\\", cmd_str):
+        parts = cmd_str.split(None, 1)
+        cmd_str = f'"{parts[0]}" {parts[1]}' if len(parts) > 1 else f'"{cmd_str}"'
+    cmd: list[str] | str = [bash_exe, "-c", cmd_str] if bash_exe else cmd_str
     try:
         proc = subprocess.run(
-            hook["command"], shell=True, check=False, input=json.dumps(payload),
+            cmd, shell=not bash_exe, check=False, input=json.dumps(payload),
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError) as e:

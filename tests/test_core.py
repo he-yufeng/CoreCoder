@@ -1,5 +1,6 @@
 """Tests for core modules: config, context, session, imports."""
 
+import os
 import re
 from pathlib import Path
 from typing import ClassVar
@@ -244,6 +245,10 @@ def test_parallel_bash_calls_inherit_and_merge_session_cwd(tmp_path):
         # pwd prints the shell's own form: git-bash gives /c/Users/... where
         # Python gives C:\Users\...; compare both in one canonical shape
         s = s.strip().replace("\\", "/").rstrip("/").lower()
+        if os.name == "nt" and s.startswith("/tmp"):
+            import tempfile
+
+            s = tempfile.gettempdir().replace("\\", "/").rstrip("/").lower() + s[4:]
         if len(s) >= 3 and s[0] == "/" and s[2] == "/" and s[1].isalpha():
             s = s[1] + ":/" + s[3:]
         return s
@@ -267,7 +272,7 @@ def test_parallel_bash_calls_inherit_and_merge_session_cwd(tmp_path):
 
         # a cd in the batch lands on the session afterwards; siblings in the
         # same batch still start from the pre-batch cwd (parallel, not serial)
-        results = agent._exec_tools_parallel([_TC(3, f"cd {target}"), _TC(4, "pwd")])
+        results = agent._exec_tools_parallel([_TC(3, f"cd {target.as_posix()}"), _TC(4, "pwd")])
         assert get_tracked_cwd() == str(target)
         assert norm_dir(str(tmp_path)) in norm_dir(results[1])
     finally:
@@ -714,7 +719,6 @@ class TestMidStreamRetry:
         ]
         from openai import APIConnectionError
 
-        with mock.patch("corecoder.llm.time.sleep"):
-            with pytest.raises(APIConnectionError):
-                llm.chat(messages=[{"role": "user", "content": "hi"}])
+        with mock.patch("corecoder.llm.time.sleep"), pytest.raises(APIConnectionError):
+            llm.chat(messages=[{"role": "user", "content": "hi"}])
         assert create.call_count == 3

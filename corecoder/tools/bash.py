@@ -7,13 +7,29 @@ Claude Code's BashTool is 1,143 lines. This is the distilled version:
 - Working directory tracking (cd awareness)
 """
 
+import functools
 import os
 import re
+import shutil
 import subprocess
 import threading
 from typing import ClassVar
 
 from .base import Tool
+
+
+@functools.lru_cache(maxsize=1)
+def _find_bash() -> str | None:
+    """Locate Git Bash on Windows so POSIX commands and shell hooks run."""
+    if os.name != "nt":
+        return None
+    for p in (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files\Git\usr\bin\bash.exe"):
+        if os.path.isfile(p):
+            return p
+    git = shutil.which("git")
+    if git and os.path.isfile(b := os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")):
+        return b
+    return b if (b := shutil.which("bash")) and "system32" not in b.lower() else None
 
 # Track cwd across commands (Claude Code does this too). Thread-local, so that
 # when the agent executes tools in parallel two bash calls never race on one
@@ -82,10 +98,12 @@ class BashTool(Tool):
         # use this thread's own tracked working directory
         cwd = get_tracked_cwd() or os.getcwd()
 
+        bash_exe = _find_bash()
+        cmd: list[str] | str = [bash_exe, "-c", command] if bash_exe else command
         try:
             proc = subprocess.run(
-                command,
-                shell=True,
+                cmd,
+                shell=not bash_exe,
                 check=False,
                 capture_output=True,
                 text=True,
