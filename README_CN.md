@@ -70,6 +70,7 @@ pip install -e .
 | OpenAI（默认 `gpt-5.5`） | `OPENAI_API_KEY=sk-...` |
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
 | OmniRoute | `OPENAI_API_KEY=your-key OPENAI_BASE_URL=http://localhost:20128/v1 CORECODER_MODEL=auto` |
+| Requesty | `OPENAI_API_KEY=rqsty-... OPENAI_BASE_URL=https://router.requesty.ai/v1 CORECODER_MODEL=anthropic/claude-sonnet-4-5` |
 | 本地 Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
 
 Kimi、Qwen 这些同样是改这两个变量；连 OpenAI 兼容接口都不给的 provider，装上可选的 LiteLLM 后端（`pip install "corecoder[litellm]"`）能路由一百多家。第三篇文章把这块讲得更细。思考模型也是一等公民：deepseek-reasoner、kimi-k3 这类模型的思考过程会实时流出来，CoreCoder 把它用暗色显示出来，但不进对话历史，provider 永远不会在回包里看到它。key 可以直接 `export`，也可以在项目根目录扔个 `.env`，启动时自动加载。然后：
