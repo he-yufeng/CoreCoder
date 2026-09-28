@@ -70,7 +70,12 @@ pip install -e .
 | OpenAI（默认 `gpt-5.5`） | `OPENAI_API_KEY=sk-...` |
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
 | OmniRoute | `OPENAI_API_KEY=your-key OPENAI_BASE_URL=http://localhost:20128/v1 CORECODER_MODEL=auto` |
+| Tsubasa | `CORECODER_API_KEY=your-tsubasa-key OPENAI_BASE_URL=https://api.tsubasa.sh/v1 CORECODER_MODEL=tsubasa-fast CORECODER_MAX_CONTEXT=32768 CORECODER_MAX_TOKENS=4096` |
 | 本地 Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
+
+Tsubasa 也可以选择 `tsubasa-pro`，并使用相同的限制。这个配置复用现有的 OpenAI
+客户端，将你的密钥和提示词发送到 `api.tsubasa.sh`。CoreCoder 在 agent 回合中会发送
+工具定义，因此所选端点和模型必须启用工具调用。
 
 Kimi、Qwen 这些同样是改这两个变量；连 OpenAI 兼容接口都不给的 provider，装上可选的 LiteLLM 后端（`pip install "corecoder[litellm]"`）能路由一百多家。第三篇文章把这块讲得更细。思考模型也是一等公民：deepseek-reasoner、kimi-k3 这类模型的思考过程会实时流出来，CoreCoder 把它用暗色显示出来，但不进对话历史，provider 永远不会在回包里看到它。key 可以直接 `export`，也可以在项目根目录扔个 `.env`，启动时自动加载。然后：
 
