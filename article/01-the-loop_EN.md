@@ -2,7 +2,7 @@
 
 If I had only one sentence to explain a coding agent, I'd put it like this: it's a loop that keeps asking the model "what's next," does what the model says, reports the result back to the model, and repeats until the model says "no need to act, I have the answer."
 
-It sounds almost disappointingly plain. But that is the truth of it. Claude Code took this same thing and built it out to hundreds of thousands of lines, yet the most central piece, the part public teardowns call `query.ts`, is at its core a `while` loop of around seventeen hundred lines. CoreCoder writes the same loop in `corecoder/agent.py`, 150 lines including blanks and comments. The two have an identical shape; the only difference is you can read the latter in a single glance.
+It sounds almost disappointingly plain. But that is the truth of it. Claude Code took this same thing and built it out to hundreds of thousands of lines, yet the most central piece, the part public teardowns call `query.ts`, is at its core a `while` loop of around seventeen hundred lines. CoreCoder writes the same loop in `corecoder/agent.py` (240 lines including blanks and comments). The two have an identical shape; the only difference is you can read the latter in a single glance.
 
 In this piece we read that loop closely, section by section.
 

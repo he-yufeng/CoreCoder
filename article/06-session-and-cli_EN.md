@@ -1,6 +1,6 @@
 # Turning it into a real command-line tool
 
-The first five pieces dissected the agent's internals: the loop, the tools, the model interface, context compression, parallelism and sub-agents. As lovely as these parts are, you can't use them directly, because one more layer is missing, a skin, a command-line interface where someone can sit down and talk to it, save, resume, and check status. This piece covers that skin, corresponding to `cli.py` (270 lines) and `session.py` (97 lines).
+The first five pieces dissected the agent's internals: the loop, the tools, the model interface, context compression, parallelism and sub-agents. As lovely as these parts are, you can't use them directly, because one more layer is missing, a skin, a command-line interface where someone can sit down and talk to it, save, resume, and check status. This piece covers that skin, corresponding to `cli.py` (358 lines) and `session.py` (97 lines).
 
 It's not just "a nice-to-have UI." Hidden in this skin is a security detail well worth discussing, which we save for the finale.
 

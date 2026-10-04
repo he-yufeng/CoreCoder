@@ -2,7 +2,7 @@
 
 The last two pieces covered the loop and the tools, the agent's hands and feet. This piece covers the brain's interface: how the model gets plugged in, how streaming output is handled, how to survive a provider acting up, and a question many tutorials skip but that you'll care about on day one after going live, namely how much this round actually cost.
 
-The file is `corecoder/llm.py`, 336 lines, the largest single file in the whole project. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
+The file is `corecoder/llm.py`, 332 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
 
 ## A bet: everyone looks like OpenAI
 
@@ -183,7 +183,7 @@ Of course this is only an estimate; the price table goes stale, and cache discou
 
 ## Where config comes from
 
-Finally, a thread through `config.py` (57 lines). It reads config from environment variables with a sensible priority:
+Finally, a thread through `config.py` (55 lines). It reads config from environment variables with a sensible priority:
 
 ```python
 api_key = (

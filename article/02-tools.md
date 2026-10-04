@@ -8,7 +8,7 @@ CoreCoder 给了模型八个工具：`bash`、`read_file`、`write_file`、`edit
 
 ## 一个工具长什么样
 
-所有工具继承自 `tools/base.py` 里的 `Tool`，整个基类 27 行：
+所有工具继承自 `tools/base.py` 里的 `Tool`，整个基类 32 行：
 
 ```python
 class Tool(ABC):
@@ -115,7 +115,7 @@ except UnicodeDecodeError:
 
 `read_file`、`edit_file` 这些工具能造成的破坏有限。`bash` 不一样，它能跑任意 shell 命令，模型一旦写出 `rm -rf /`，后果是真实的。
 
-Claude Code 的 `BashTool` 公开拆解里是 1143 行，里头有命令分类器、有基于 `sandbox-exec` 和 `seccomp` 的真沙箱、有输出截断、有交互式命令拦截。CoreCoder 的 `bash.py` 是 127 行的蒸馏版，保留了四件最要紧的事：危险命令检测、输出截断、超时、工作目录跟踪。
+Claude Code 的 `BashTool` 公开拆解里是 1143 行，里头有命令分类器、有基于 `sandbox-exec` 和 `seccomp` 的真沙箱、有输出截断、有交互式命令拦截。CoreCoder 的 `bash.py` 是 203 行的蒸馏版，保留了四件最要紧的事：危险命令检测、输出截断、超时、工作目录跟踪。
 
 危险命令检测是一张正则黑名单：
 

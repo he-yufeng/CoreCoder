@@ -1,6 +1,6 @@
 # Three Ways to Extend Without Touching the Loop: MCP, Hooks, and Plan Mode
 
-By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (208 lines), `hooks.py` (85 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
+By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (208 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
 
 ## MCP: cutting the protocol down to the slice an agent uses
 
