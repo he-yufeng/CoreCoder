@@ -19,7 +19,7 @@ npm exec --yes --package=mcp-remote@0.14.3 -- node -e 'console.log("bridge cache
 
 The first download can exceed CoreCoder's 15-second MCP startup timeout.
 The example pins the tested bridge version and uses HTTP only, without an SSE
-fallback. It sends `User-Agent: corecoder/0.7.0` on the bridge's HTTP requests.
+fallback. It sends `User-Agent: corecoder/0.7.0` on MCP tool discovery, search, and fetch requests.
 `--enable-proxy` honors existing `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
 settings when your network requires a proxy.
 
