@@ -9,7 +9,8 @@
         "--transport",
         "http-only",
         "--header",
-        "User-Agent: corecoder/0.7.0"
+        "User-Agent: corecoder/0.7.0",
+        "--enable-proxy"
       ]
     }
   }
