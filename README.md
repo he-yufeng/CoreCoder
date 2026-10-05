@@ -267,6 +267,8 @@ Drop a `mcp.json` under `~/.corecoder` and tools from any MCP server join the ag
 
 Each configured server starts as a subprocess at launch, handshakes, and lists its tools; every one is registered as `mcp__<server>__<tool>`, so hook matchers and the consent gate treat it exactly like a built-in. MCP tools stay out of the read-only set, meaning the agent asks before running one. The handshake gets fifteen seconds, a call gets sixty, and a server that dies or never answers fails that one call as an ordinary tool result instead of killing the loop. The client speaks the tools slice of the protocol (initialize, tools/list, tools/call) and nothing else, which keeps the whole thing inside `mcp.py` at about 200 lines. With no `mcp.json` there is no MCP and nothing changes.
 
+For an opt-in remote web research example, see [the stdio-to-HTTP bridge setup](examples/parallel-search-mcp.md). It loads Parallel Search MCP through the existing configuration and consent path.
+
 ## Related Projects
 
 If working through CoreCoder was useful, here are a few other tools I've built around agents and LLM systems:
