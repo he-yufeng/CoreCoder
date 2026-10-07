@@ -66,7 +66,8 @@ def test_doc_python_line_references_are_current():
         r"((?:corecoder/)?(?:tools/)?[a-z_]+\.py)[^()\n]{0,25}?(\d+)\s*(?:lines|行)(?!\s*(?:上下|多|来))"
     )
     actual = {
-        str(p.relative_to(root)): len(p.read_text(encoding="utf-8").splitlines())
+        # POSIX form so the forward-slash references resolve on Windows too
+        p.relative_to(root).as_posix(): len(p.read_text(encoding="utf-8").splitlines())
         for p in (root / "corecoder").rglob("*.py")
     }
 
