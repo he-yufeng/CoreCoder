@@ -2,7 +2,7 @@
 
 The last two pieces covered the loop and the tools, the agent's hands and feet. This piece covers the brain's interface: how the model gets plugged in, how streaming output is handled, how to survive a provider acting up, and a question many tutorials skip but that you'll care about on day one after going live, namely how much this round actually cost.
 
-The file is `corecoder/llm.py`, 332 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
+The file is `corecoder/llm.py`, 349 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
 
 ## A bet: everyone looks like OpenAI
 
@@ -158,12 +158,14 @@ _PRICING = {
 }
 ```
 
+That table is only the default. `_load_pricing()` overlays it with `~/.corecoder/pricing.json` in the same shape, so a new model or a moved price lands without waiting for a release; a missing or broken file quietly means the built-ins.
+
 The `estimated_cost` property takes the accumulated tokens and multiplies by the matching unit price:
 
 ```python
 @property
 def estimated_cost(self) -> float | None:
-    pricing = _PRICING.get(self.model)
+    pricing = _load_pricing().get(self.model)
     if not pricing:
         return None
     input_rate, output_rate = pricing

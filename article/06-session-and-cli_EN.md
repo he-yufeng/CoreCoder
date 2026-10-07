@@ -1,6 +1,6 @@
 # Turning it into a real command-line tool
 
-The first five pieces dissected the agent's internals: the loop, the tools, the model interface, context compression, parallelism and sub-agents. As lovely as these parts are, you can't use them directly, because one more layer is missing, a skin, a command-line interface where someone can sit down and talk to it, save, resume, and check status. This piece covers that skin, corresponding to `cli.py` (358 lines) and `session.py` (97 lines).
+The first five pieces dissected the agent's internals: the loop, the tools, the model interface, context compression, parallelism and sub-agents. As lovely as these parts are, you can't use them directly, because one more layer is missing, a skin, a command-line interface where someone can sit down and talk to it, save, resume, and check status. This piece covers that skin, corresponding to `cli.py` (393 lines) and `session.py` (97 lines).
 
 It's not just "a nice-to-have UI." Hidden in this skin is a security detail well worth discussing, which we save for the finale.
 
@@ -50,6 +50,7 @@ The REPL recognizes a set of slash commands that aren't sent to the model but di
 /diff      list files changed this session
 /save      save the session to disk
 /sessions  list saved sessions
+/mcp       MCP server status, and reconnect a dead one
 ```
 
 These commands expose the core capabilities from the previous pieces as switches the user can flip directly. `/tokens` calls piece three's `estimated_cost`, `/compact` calls piece four's `maybe_compress`, `/diff` reads the "changed files" set that piece two's `edit_file` has been maintaining all along. The core prepared these capabilities long ago, and the CLI just gives each one a handy entry point.

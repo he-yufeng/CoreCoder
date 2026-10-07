@@ -2,7 +2,7 @@
 
 前两篇讲的是循环和工具，也就是 agent 的手脚。这一篇讲大脑接口：模型怎么接进来，流式输出怎么处理，provider 抽风了怎么扛，以及一个被很多教程跳过、但你上线后第一天就会关心的问题，这一轮到底花了多少钱。
 
-对应的文件是 `corecoder/llm.py`，332 行，是引擎里最大的单文件。它大，是因为它替你扛下了和真实 API 打交道时所有不优雅的部分。
+对应的文件是 `corecoder/llm.py`，349 行，是引擎里最大的单文件。它大，是因为它替你扛下了和真实 API 打交道时所有不优雅的部分。
 
 ## 一个赌注：大家都长得像 OpenAI
 
@@ -158,12 +158,14 @@ _PRICING = {
 }
 ```
 
+这张表只是默认值。`_load_pricing()` 会用 `~/.corecoder/pricing.json`（同样的形状）覆盖它，新模型、调价都不用等发版；文件不存在或者写坏了，就静默落回内置表。
+
 `estimated_cost` 这个 property 拿累计 token 乘上对应单价：
 
 ```python
 @property
 def estimated_cost(self) -> float | None:
-    pricing = _PRICING.get(self.model)
+    pricing = _load_pricing().get(self.model)
     if not pricing:
         return None
     input_rate, output_rate = pricing

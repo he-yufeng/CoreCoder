@@ -1,6 +1,6 @@
 # Three Ways to Extend Without Touching the Loop: MCP, Hooks, and Plan Mode
 
-By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (208 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
+By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (237 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
 
 ## MCP: cutting the protocol down to the slice an agent uses
 
@@ -17,7 +17,7 @@ Each server is a subprocess speaking JSON-RPC 2.0, one message per line over std
 The real engineering is two threading problems. First, tool calls run concurrently (article five), so when several threads call the same server, how do responses find their callers? A daemon thread owns stdout and parks every response in a `_responses` dict under its request id; the caller waits on its own id:
 
 ```python
-threading.Thread(target=self._read_loop, daemon=True).start()
+threading.Thread(target=self._read_loop, args=(self._proc,), daemon=True).start()
 ```
 
 Second, stdin is a single pipe, and two requests must never interleave their bytes, so a `_write_lock` serializes writes. One reader demultiplexing by id, one lock sequencing writes: that is the standard shape for talking both ways over one pipe, no queues and no event loop needed.
@@ -29,7 +29,7 @@ The most deliberate part is failure handling. What happens when a server hangs, 
 # error string; it never kills the loop
 ```
 
-The failure surfaces as an ordinary error string from that one tool call. The model reads "this service is unavailable" and works around it; the main loop never even sees an exception. It is the same principle article three established for the model interface: the outside world can always break, and the loop must not break with it.
+The failure surfaces as an ordinary error string from that one tool call. The model reads "this service is unavailable" and works around it; the main loop never even sees an exception. It is the same principle article three established for the model interface: the outside world can always break, and the loop must not break with it. And when a server does die, it stays down only until you ask otherwise: `/mcp` in the REPL lists every server with its state, and `/mcp reconnect <name>` spawns a fresh process and redoes the handshake. The tools the agent already holds route through the client, not the process, so they work again the moment the new handshake lands.
 
 ## Hooks: allowed to veto, never allowed to kill
 

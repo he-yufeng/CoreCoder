@@ -9,6 +9,7 @@ stdin/stdout. Startup handshakes (`initialize`), pulls `tools/list`, and every
 remote tool joins the agent as `mcp__<server>__<tool>`, so consent, hooks and
 the main loop treat them exactly like the built-ins. A server that hangs or
 dies fails that one call as an ordinary error string; it never kills the loop.
+The REPL's /mcp shows each server's state and reconnects a dead one by hand.
 """
 
 import atexit
@@ -46,21 +47,31 @@ class MCPClient:
     def __init__(self, name: str, command: str, args: list = (), env: dict | None = None):
         self.name = name
         self.call_timeout = CALL_TIMEOUT
-        self._proc = subprocess.Popen(
-            [command, *args],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            env={**os.environ, **(env or {})},  # servers inherit the user env, config overrides
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,  # line buffered: the transport is newline-delimited JSON
-        )
+        self._command = command
+        self._args = args
+        self._env = env
         self._next_id = 0
         self._dead: MCPError | None = None
         self._responses: dict[int, dict] = {}
         self._cond = threading.Condition()
         self._write_lock = threading.Lock()
-        threading.Thread(target=self._read_loop, daemon=True).start()
+        self._start()
+
+    def _start(self):
+        """Spawn the server and run the startup handshake."""
+        self._proc = subprocess.Popen(
+            [self._command, *self._args],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            env={**os.environ, **(self._env or {})},  # servers inherit the user env, config overrides
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,  # line buffered: the transport is newline-delimited JSON
+        )
+        threading.Thread(target=self._read_loop, args=(self._proc,), daemon=True).start()
+        with self._cond:
+            self._dead = None  # a fresh process starts clean
+            self._responses.clear()
         try:
             self._request("initialize", {
                 "protocolVersion": PROTOCOL_VERSION,
@@ -72,6 +83,23 @@ class MCPClient:
             self.tools = [MCPTool(self, t) for t in listed.get("tools", [])]
         except BaseException:
             self.close()  # a half-started server must not leak
+            raise
+
+    @property
+    def error(self) -> MCPError | None:
+        """What killed the server, or None while it is healthy."""
+        return self._dead
+
+    def reconnect(self):
+        """Start a fresh process for a dead or hung server and redo the
+        handshake. The mcp__ tools the agent already holds route through this
+        client, so they work again as soon as the handshake lands."""
+        self.close()
+        try:
+            self._start()
+        except (MCPError, OSError) as e:
+            with self._cond:
+                self._dead = e if isinstance(e, MCPError) else MCPError(str(e))
             raise
 
     def call_tool(self, tool_name: str, arguments: dict) -> str:
@@ -137,9 +165,9 @@ class MCPClient:
         except OSError as e:
             raise MCPError(f"MCP server {self.name!r} is not writable: {e}") from e
 
-    def _read_loop(self):
+    def _read_loop(self, proc: subprocess.Popen):
         try:
-            for line in self._proc.stdout:
+            for line in proc.stdout:
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
@@ -153,8 +181,9 @@ class MCPClient:
         except (OSError, ValueError):
             pass
         with self._cond:
-            # stdout closing means the server is gone for good
-            if self._dead is None:
+            # stdout closing means the server is gone for good; a reader left
+            # over from before a reconnect must not mark the new process dead
+            if proc is self._proc and self._dead is None:
                 self._dead = MCPError(f"MCP server {self.name!r} exited")
             self._cond.notify_all()
 

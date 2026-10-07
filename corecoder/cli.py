@@ -292,6 +292,9 @@ def _repl(agent: Agent, config: Config):
                 for s in sessions:
                     console.print(f"  [cyan]{s['id']}[/cyan] ({s['model']}, {s['saved_at']}) {s['preview']}")
             continue
+        if user_input == "/mcp" or user_input.startswith("/mcp "):
+            _mcp(user_input[4:].strip())
+            continue
 
         # an unknown /command shouldn't be sent to the model as a prompt
         if user_input.startswith("/"):
@@ -329,6 +332,37 @@ def _repl(agent: Agent, config: Config):
             console.print(f"\n[red]Error: {e}[/red]")
 
 
+def _mcp(arg: str):
+    """The /mcp command: server states, or `reconnect <name>` to revive one."""
+    from . import mcp
+    parts = arg.split()
+    if not parts:
+        if not mcp._live_clients:
+            console.print("[dim]No MCP servers running (configure ~/.corecoder/mcp.json).[/dim]")
+        for client in mcp._live_clients:
+            if client.error is None:
+                console.print(f"  [cyan]{client.name}[/cyan]: alive, {len(client.tools)} tools")
+            else:
+                console.print(
+                    f"  [cyan]{client.name}[/cyan]: [red]dead[/red] ({client.error})"
+                    f", revive with /mcp reconnect {client.name}"
+                )
+        return
+    if len(parts) == 2 and parts[0] == "reconnect":
+        client = next((c for c in mcp._live_clients if c.name == parts[1]), None)
+        if client is None:
+            console.print(f"[red]No MCP server named '{parts[1]}'.[/red]")
+            return
+        try:
+            client.reconnect()
+        except (mcp.MCPError, OSError) as e:
+            console.print(f"[red]Reconnect failed:[/red] {e}")
+        else:
+            console.print(f"[green]Reconnected:[/green] [cyan]{client.name}[/cyan], {len(client.tools)} tools")
+        return
+    console.print("[yellow]Usage: /mcp [reconnect <name>][/yellow]")
+
+
 def _show_help():
     console.print(Panel(
         "[bold]Commands:[/bold]\n"
@@ -343,6 +377,7 @@ def _show_help():
         "  /plan          Toggle plan mode: read-only, then a plan to approve\n"
         "  /save          Save session to disk\n"
         "  /sessions      List saved sessions\n"
+        "  /mcp           MCP server status; /mcp reconnect <name> revives a dead one\n"
         "  quit           Exit CoreCoder\n"
         "\n"
         "[bold]Input:[/bold]\n"
