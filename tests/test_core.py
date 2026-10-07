@@ -1,5 +1,6 @@
 """Tests for core modules: config, context, session, imports."""
 
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -260,6 +261,37 @@ def test_cost_estimation_unknown_model():
     llm.total_prompt_tokens = 1000
     llm.total_completion_tokens = 500
     assert llm.estimated_cost is None
+
+
+def _llm_at(model, prompt_tokens=1_000_000, completion_tokens=500_000):
+    from corecoder.llm import LLM
+    llm = LLM.__new__(LLM)
+    llm.model = model
+    llm.total_prompt_tokens = prompt_tokens
+    llm.total_completion_tokens = completion_tokens
+    return llm
+
+
+def test_pricing_json_overrides_and_extends_the_builtin_table(monkeypatch, tmp_path):
+    from corecoder import llm as llm_module
+    custom = tmp_path / "pricing.json"
+    custom.write_text(
+        json.dumps({"gpt-5.4": [100, 200], "my-own-model": [1, 2]}), encoding="utf-8"
+    )
+    monkeypatch.setattr(llm_module, "PRICING_FILE", custom)
+
+    assert _llm_at("gpt-5.4").estimated_cost == 100 + 100  # the override wins over (2.5, 15)
+    assert _llm_at("my-own-model").estimated_cost == 1 + 1  # a model the built-ins never heard of
+
+
+@pytest.mark.parametrize("content", ["{not json", '{"gpt-5.4": "cheap"}', '[1, 2]'])
+def test_a_broken_pricing_json_falls_back_to_the_builtin_table(monkeypatch, tmp_path, content):
+    from corecoder import llm as llm_module
+    broken = tmp_path / "pricing.json"
+    broken.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(llm_module, "PRICING_FILE", broken)
+
+    assert _llm_at("gpt-5.4").estimated_cost == 2.5 + 7.5
 
 
 # --- Changed files tracking ---

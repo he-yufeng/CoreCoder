@@ -12,6 +12,7 @@ single unified interface. Set CORECODER_PROVIDER=litellm.
 import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from openai import APIConnectionError, APIError, APITimeoutError, BadRequestError, OpenAI, RateLimitError
 
@@ -81,6 +82,22 @@ _PRICING = {
     "kimi-k2.5": (0.6, 3),
 }
 
+# same shape as the table above; entries here win over the built-ins
+PRICING_FILE = Path.home() / ".corecoder" / "pricing.json"
+
+
+def _load_pricing() -> dict:
+    """Built-in prices overlaid with the user's pricing.json, so a new model
+    or a price change lands without waiting for a release. A missing or
+    broken file just means the built-ins."""
+    pricing = dict(_PRICING)
+    try:
+        overrides = json.loads(PRICING_FILE.read_text(encoding="utf-8"))
+        pricing.update({m: (float(r[0]), float(r[1])) for m, r in overrides.items()})
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+        pass
+    return pricing
+
 
 def _adapt_rejected_param(params: dict, exc: BadRequestError) -> bool:
     """Translate or drop one parameter a provider rejected with a 400.
@@ -117,8 +134,8 @@ class LLM:
 
     @property
     def estimated_cost(self) -> float | None:
-        """Rough cost estimate in USD. Returns None if model not in pricing table."""
-        pricing = _PRICING.get(self.model)
+        """Rough cost estimate in USD. Returns None if the model has no known price."""
+        pricing = _load_pricing().get(self.model)
         if not pricing:
             return None
         input_rate, output_rate = pricing
