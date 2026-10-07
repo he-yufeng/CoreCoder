@@ -7,6 +7,7 @@ these tests need no shell and run the same on Windows.
 import json
 import logging
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -162,6 +163,22 @@ def test_missing_config_means_no_mcp(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         assert load_mcp_tools(tmp_path / "nope.json") == []
     assert caplog.records == []
+
+
+def test_shipped_examples_match_the_loader_contract():
+    # Every examples/*.json must stay loadable: mcpServers entries with a
+    # string command, list args and dict env when present.
+    examples = list((Path(__file__).resolve().parent.parent / "examples").glob("*.json"))
+    assert examples, "no example configs to pin"
+    for path in examples:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        servers = data.get("mcpServers")
+        assert isinstance(servers, dict) and servers, f"{path.name}: mcpServers missing"
+        for name, spec in servers.items():
+            assert isinstance(name, str) and name, f"{path.name}: blank server name"
+            assert isinstance(spec.get("command"), str), f"{path.name}: {name} needs a command"
+            assert isinstance(spec.get("args", []), list), f"{path.name}: {name} args not a list"
+            assert isinstance(spec.get("env", {}), dict), f"{path.name}: {name} env not a dict"
 
 
 def test_broken_config_is_ignored_with_one_warning(tmp_path, caplog):
