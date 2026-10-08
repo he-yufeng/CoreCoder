@@ -73,3 +73,23 @@ def test_session_roundtrips_unicode(tmp_path, monkeypatch):
     raw = (tmp_path / f"{sid}.json").read_bytes()
     assert "请帮我修复这个 bug".encode() in raw
     assert load_session(sid) == (msgs, "model-zh")
+
+
+def test_invalid_utf8_session_file_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+
+    raw = b'{"id": "bad", "model": "m", "messages": [{"role": "user", "content": "\xe4\xb8'
+    (tmp_path / "bad.json").write_bytes(raw)
+
+    assert load_session("bad") is None
+
+
+def test_invalid_utf8_session_is_skipped_in_listing(tmp_path, monkeypatch):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+
+    sid = save_session([{"role": "user", "content": "still here"}], "m")
+    (tmp_path / "zz_corrupt.json").write_bytes(b'{"id": "\xff\xfe')
+
+    ids = [s["id"] for s in session_module.list_sessions()]
+    assert sid in ids
+    assert len(ids) == 1
