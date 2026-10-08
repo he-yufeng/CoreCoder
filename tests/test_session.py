@@ -1,5 +1,7 @@
+import pytest
+
 from corecoder import session as session_module
-from corecoder.session import load_session, save_session
+from corecoder.session import list_sessions, load_session, save_session
 
 
 def test_default_session_ids_do_not_collide(tmp_path, monkeypatch):
@@ -62,6 +64,33 @@ def test_corrupt_session_file_returns_none(tmp_path, monkeypatch):
     (tmp_path / "broken.json").write_text("{ not valid json", encoding="utf-8")
 
     assert load_session("broken") is None
+
+
+@pytest.mark.parametrize("payload", [b"\xff", b'{"messages": [{"content": "\xe4\xbd'])
+def test_invalid_utf8_session_returns_none(tmp_path, monkeypatch, payload):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    path = tmp_path / "broken.json"
+    path.write_bytes(payload)
+
+    assert load_session("broken") is None
+    assert path.read_bytes() == payload
+
+
+@pytest.mark.parametrize("payload", [b"\xff", b'{"messages": [{"content": "\xe4\xbd'])
+def test_list_sessions_skips_invalid_utf8(tmp_path, monkeypatch, payload):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    messages = [{"role": "user", "content": "你好"}]
+    sid = save_session(messages, "model-zh", "valid")
+    path = tmp_path / "z-broken.json"
+    path.write_bytes(payload)
+
+    sessions = list_sessions()
+
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == sid
+    assert sessions[0]["preview"] == "你好"
+    assert load_session(sid) == (messages, "model-zh")
+    assert path.read_bytes() == payload
 
 
 def test_session_roundtrips_unicode(tmp_path, monkeypatch):
