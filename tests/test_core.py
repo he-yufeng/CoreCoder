@@ -580,6 +580,32 @@ class TestLLMParamFallback:
         assert "temperature" not in retry_kwargs
         assert retry_kwargs["max_tokens"] == 1024
 
+    def test_temperature_dropped_when_rejected_unquoted(self):
+        """Kimi's 400 names the parameter without quotes (\"invalid
+        temperature: only 1 is allowed for this model\"); the adaptation
+        must still drop temperature instead of re-sending it."""
+        llm = self._make_llm()
+        create = self._chat_with_failures(
+            llm,
+            [self._bad_request("invalid temperature: only 1 is allowed for this model")],
+        )
+        retry_kwargs = create.call_args_list[-1][1]
+        assert "temperature" not in retry_kwargs
+        assert retry_kwargs["max_tokens"] == 1024
+
+    def test_unrelated_rejection_keeps_temperature(self):
+        """A 400 about another parameter must not drop temperature: the
+        unquoted match may only fire on the word itself, and no other
+        parameter name contains it."""
+        llm = self._make_llm()
+        create = self._chat_with_failures(
+            llm,
+            [self._bad_request("Unsupported parameter: 'max_completion_tokens' is unknown here")],
+        )
+        retry_kwargs = create.call_args_list[-1][1]
+        assert retry_kwargs["temperature"] == 0.7
+        assert retry_kwargs["max_tokens"] == 1024
+
     def test_stream_options_still_dropped_on_first_400(self):
         llm = self._make_llm()
         create = self._chat_with_failures(llm, [self._bad_request("Bad request")])
