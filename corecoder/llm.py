@@ -112,7 +112,7 @@ def _adapt_rejected_param(params: dict, exc: BadRequestError) -> bool:
     if "'max_tokens'" in message and "max_tokens" in params:
         params["max_completion_tokens"] = params.pop("max_tokens")
         return True
-    if "'temperature'" in message and "temperature" in params:
+    if "temperature" in message and "temperature" in params:
         params.pop("temperature")
         return True
     return False
