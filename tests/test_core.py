@@ -617,7 +617,7 @@ class TestLLMParamFallback:
 
 class TestReasoningPassthrough:
     """Thinking models stream reasoning_content next to content. It is shown
-    through on_reasoning but never mixed into the reply or the history."""
+    through on_reasoning and retained separately from the reply text."""
 
     @staticmethod
     def _make_llm():
@@ -647,6 +647,59 @@ class TestReasoningPassthrough:
             ),
         ]
 
+    @pytest.mark.parametrize("reasoning_chunks", [["read ", "the file"], [""]])
+    @pytest.mark.parametrize("with_callback", [False, True])
+    def test_agent_returns_reasoning_in_followup_requests(self, tmp_path, reasoning_chunks, with_callback):
+        try:
+            import httpx
+        except ModuleNotFoundError:
+            import httpx2 as httpx
+
+        from openai import OpenAI
+
+        fixture = tmp_path / "note.txt"
+        fixture.write_text("tool result", encoding="utf-8")
+        requests = []
+
+        def endpoint(request):
+            payload = json.loads(request.content)
+            requests.append(payload)
+            if len(requests) == 1:
+                deltas = [{"reasoning_content": part} for part in reasoning_chunks]
+                deltas.append({"tool_calls": [{
+                    "index": 0, "id": "read-1", "type": "function",
+                    "function": {"name": "read_file", "arguments": json.dumps({"file_path": str(fixture)})},
+                }]})
+            else:
+                assistant = next(m for m in payload["messages"] if m["role"] == "assistant")
+                assert assistant["reasoning_content"] == "".join(reasoning_chunks)
+                assert assistant["content"] is None
+                assert assistant["tool_calls"][0]["id"] == "read-1"
+                tool_result = next(m for m in payload["messages"] if m["role"] == "tool")
+                assert tool_result["tool_call_id"] == "read-1"
+                assert "tool result" in tool_result["content"]
+                if len(requests) == 3:
+                    # The next user turn must retain the final answer's reasoning too.
+                    assert payload["messages"][-2] == {
+                        "role": "assistant", "content": "done", "reasoning_content": "ready",
+                    }
+                deltas = [{"reasoning_content": "ready"}, {"content": "done"}]
+            data = "".join("data: " + json.dumps({
+                "id": "reply", "object": "chat.completion.chunk", "created": 0, "model": "kimi-k2.5",
+                "choices": [{"index": 0, "delta": delta}],
+            }) + "\n\n" for delta in deltas)
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=data + "data: [DONE]\n\n")
+
+        llm = LLM(model="kimi-k2.5", api_key="sk-test", temperature=1)
+        seen_reasoning = []
+        with OpenAI(api_key="sk-test", http_client=httpx.Client(transport=httpx.MockTransport(endpoint))) as client:
+            llm.client = client
+            agent = Agent(llm=llm, tools=[get_tool("read_file")])
+            assert agent.chat("read the note", on_reasoning=seen_reasoning.append if with_callback else None) == "done"
+            assert agent.chat("again") == "done"
+        assert len(requests) == 3
+        assert seen_reasoning == ([part for part in reasoning_chunks if part] + ["ready"] if with_callback else [])
+
     def test_reasoning_forwarded_and_content_clean(self):
         llm = self._make_llm()
         llm.client.chat.completions.create.return_value = self._stream()
@@ -657,16 +710,16 @@ class TestReasoningPassthrough:
         )
         assert reasoning_parts == ["think ", "hard"]
         assert result.content == "answer"
-        # reasoning must not leak into the history message
-        assert "think" not in str(result.message)
+        assert result.message == {"role": "assistant", "content": "answer", "reasoning_content": "think hard"}
         assert llm.total_prompt_tokens == 5
         assert llm.total_completion_tokens == 3
 
-    def test_reasoning_without_callback_is_dropped(self):
+    def test_reasoning_without_callback_is_retained(self):
         llm = self._make_llm()
         llm.client.chat.completions.create.return_value = self._stream()
         result = llm.chat(messages=[{"role": "user", "content": "hi"}])
         assert result.content == "answer"
+        assert result.message["reasoning_content"] == "think hard"
 
     def test_openrouter_reasoning_field_also_forwarded(self):
         # aggregators normalize the chain-of-thought onto delta.reasoning
@@ -677,7 +730,9 @@ class TestReasoningPassthrough:
             SimpleNamespace(
                 usage=None,
                 choices=[SimpleNamespace(delta=SimpleNamespace(
-                    content="answer", tool_calls=None, reasoning="ponder"))],
+                    content="answer", reasoning="ponder", tool_calls=[SimpleNamespace(
+                        index=0, id="call-1", function=SimpleNamespace(name="read_file", arguments="{}"),
+                    )]))],
             ),
         ]
         reasoning_parts = []
@@ -687,6 +742,8 @@ class TestReasoningPassthrough:
         )
         assert reasoning_parts == ["ponder"]
         assert result.content == "answer"
+        assert result.tool_calls[0].name == "read_file"
+        assert "reasoning_content" not in result.message
 
 
 class _DyingStream:
@@ -707,7 +764,7 @@ class _DyingStream:
             return SimpleNamespace(
                 usage=None,
                 choices=[SimpleNamespace(delta=SimpleNamespace(
-                    content="part", tool_calls=None, reasoning_content=None))],
+                    content="part", tool_calls=None, reasoning_content="abandoned"))],
             )
         raise self._exc
 
@@ -767,6 +824,7 @@ class TestMidStreamRetry:
         with mock.patch("corecoder.llm.time.sleep"):
             result = llm.chat(messages=[{"role": "user", "content": "hi"}])
         assert result.content == "full"
+        assert "reasoning_content" not in result.message
         assert create.call_count == 2
         # usage comes only from the successful attempt, never double counted
         assert llm.total_prompt_tokens == 7

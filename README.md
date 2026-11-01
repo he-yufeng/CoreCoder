@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. A 1.3k-line engine inside 2,816 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. A 1.3k-line engine inside 2,824 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1322_LoC-blue)](article/00-index_EN.md)
+[![engine](https://img.shields.io/badge/engine-1330_LoC-blue)](article/00-index_EN.md)
 [![essays](https://img.shields.io/badge/source--reading-8_bilingual-orange)](article/00-index_EN.md)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,322 engine / 2,816 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,330 engine / 2,824 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,9 +36,9 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,322 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 25 files: 2,816 physical lines, 2,276 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
+The engine (loop, model interface, context, tools, sessions) is 1,330 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 25 files: 2,824 physical lines, 2,284 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. 227 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. 231 tests, all green. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -72,7 +72,7 @@ Give it a model and a key and it goes. It speaks the OpenAI-compatible API by de
 | OmniRoute | `OPENAI_API_KEY=your-key OPENAI_BASE_URL=http://localhost:20128/v1 CORECODER_MODEL=auto` |
 | Local Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
 
-Kimi, Qwen and the like are the same two variables; for providers that don't even offer an OpenAI-compatible endpoint, the optional LiteLLM backend (`pip install "corecoder[litellm]"`) routes to a hundred-plus of them. The third essay goes into this in detail. Thinking models are first-class too: deepseek-reasoner, kimi-k3 and friends stream their chain-of-thought, and CoreCoder shows it dimmed as it works, kept out of the conversation history so providers never see it come back. The key can be `export`ed directly or dropped into a `.env` at the project root, which is loaded on startup. Then:
+Kimi, Qwen and the like are the same two variables; for providers that don't even offer an OpenAI-compatible endpoint, the optional LiteLLM backend (`pip install "corecoder[litellm]"`) routes to a hundred-plus of them. The third essay goes into this in detail. Thinking models are first-class too: deepseek-reasoner, kimi-k3 and friends stream their chain-of-thought, and CoreCoder shows it dimmed as it works, kept separate from the reply text. Returned `reasoning_content` is retained in history for Kimi/DeepSeek continuation requests, even without a display callback; OpenRouter's `reasoning` field stays display-only. The key can be `export`ed directly or dropped into a `.env` at the project root, which is loaded on startup. Then:
 
 Smoke-tested end to end (read the file, edit it, run it, report back) against DeepSeek, Qwen3 and Kimi K2 via a single OpenRouter-compatible endpoint; each completed the full loop. One note for one-shot scripts: `-p` refuses mutating tools unless you pass `--yes`, by design.
 
@@ -88,7 +88,7 @@ Laid out flat, the whole project is this big. Skim it before you clone and you'l
 ```
 corecoder/
 ├── agent.py        agent loop + parallel tool exec       240 lines   ← start here
-├── llm.py          streaming client + retry + cost        349 lines
+├── llm.py          streaming client + retry + cost        357 lines
 ├── context.py      three-tier context compaction          220 lines
 ├── session.py      save / resume + path-traversal guard    97 lines
 ├── permissions.py  consent for mutating tools              75 lines
@@ -165,7 +165,7 @@ I also wrote a bilingual source-reading series, one intro plus eight parts, each
 
 Once you understand it, the natural next step is to fork. Getting started doesn't take much:
 
-- **Swap in a model you actually use.** It's the two env vars from above; `llm.py` (349 lines) is the entry point for all provider adaptation.
+- **Swap in a model you actually use.** It's the two env vars from above; `llm.py` (357 lines) is the entry point for all provider adaptation.
 - **Add a tool of your own.** Write a new file against the tool base class in `tools/base.py` (32 lines): run tests, fetch a page, call an LSP, whatever. The end of the second essay walks you through your first one by hand.
 - **Rewrite the system prompt.** `prompt.py` is all of 41 lines; change one line and you'll watch the agent's temperament shift. It's the cheapest "change one thing, see a result" in the whole project.
 - **Import it as a library.** The top level exports `Agent`, `LLM`, and `Config`, ready to embed in your own program:
@@ -280,7 +280,7 @@ If working through CoreCoder was useful, here are a few other tools I've built a
 
 ## Contributing / License
 
-Before you send anything, run `pytest tests/ -q` (227 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
+Before you send anything, run `pytest tests/ -q` (231 tests), `ruff check`, and `compileall`, and make sure they're green. MIT licensed: fork it, learn from it, ship something better. A mention of this project is appreciated.
 
 ---
 
