@@ -148,6 +148,24 @@ def test_estimate_tokens_tiered_by_content():
     assert _approx_tokens(cjk) > 150
 
 
+def test_context_compresses_reasoning_heavy_history():
+    ctx = ContextManager(max_tokens=2000)
+    messages = [
+        {"role": "user", "content": "read the note"},
+        {"role": "assistant", "content": None, "reasoning_content": "x" * 6800,
+         "tool_calls": [{"id": "read-1"}]},
+        {"role": "tool", "tool_call_id": "read-1", "content": "note.txt contains the result"},
+    ]
+    for _ in range(3):
+        messages.extend([{"role": "user", "content": "continue"}, {"role": "assistant", "content": "done"}])
+    recent = messages[-4:]
+    # Roughly 2,000 tokens of reasoning must trigger the existing context guard.
+    assert estimate_tokens(messages) >= 2000
+    assert ctx.maybe_compress(messages)
+    assert estimate_tokens(messages) < 1800
+    assert messages[-4:] == recent
+
+
 def test_context_snip():
     ctx = ContextManager(max_tokens=3000)
     msgs = [

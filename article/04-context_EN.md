@@ -4,7 +4,7 @@ An agent has one physical constraint it can't get around: the context window is 
 
 And coding tasks happen to be prolific token producers. The model reads a thousand-line file, and those thousand lines, line numbers and all, go into the history; it runs a test, and several hundred lines of output go into the history; it greps once, and dozens of matches go into the history. A halfway-decent task running a dozen-odd rounds burns tens of thousands of tokens. Once the window fills, either the API errors or you have to cut the history, and cut it badly and the agent starts "forgetting": a file it read earlier it reads again, a decision it just made it overturns.
 
-So fitting a long task into a finite window is one of the most hardcore subproblems in agent engineering. This piece looks at how `corecoder/context.py` (220 lines) solves it.
+So fitting a long task into a finite window is one of the most hardcore subproblems in agent engineering. This piece looks at how `corecoder/context.py` (222 lines) solves it.
 
 ## Layered, lightest to heaviest
 

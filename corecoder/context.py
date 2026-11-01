@@ -40,6 +40,8 @@ def estimate_tokens(messages: list[dict]) -> int:
     for m in messages:
         if m.get("content"):
             total += _approx_tokens(m["content"])
+        if m.get("reasoning_content"):
+            total += _approx_tokens(m["reasoning_content"])
         if m.get("tool_calls"):
             total += _approx_tokens(str(m["tool_calls"]))
     return total

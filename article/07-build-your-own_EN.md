@@ -16,7 +16,7 @@ pip install -e .
 python -m pytest tests/ -q
 ```
 
-That last line should show 231 tests all green. Don't skip this step. It confirms your environment is clean, so that when you later break something you can be sure it was you who broke it, not the environment being broken to begin with. The tests this project ships with aren't decoration, they're your safety net while refactoring, and all those pits the earlier pieces kept mentioning (orphaned tool messages, concurrency races, path traversal) are pinned down by tests. Every time you change something next, you should come back and run this line.
+That last line should show 232 tests all green. Don't skip this step. It confirms your environment is clean, so that when you later break something you can be sure it was you who broke it, not the environment being broken to begin with. The tests this project ships with aren't decoration, they're your safety net while refactoring, and all those pits the earlier pieces kept mentioning (orphaned tool messages, concurrency races, path traversal) are pinned down by tests. Every time you change something next, you should come back and run this line.
 
 ## Step one: plug in your own model
 
@@ -179,7 +179,7 @@ Pick one you genuinely need and do it. Don't let the length of the list make you
 
 If this series leaves you with only one thing, I hope it's this: a coding agent is less mysterious than it seems, it's just a stack of engineering decisions you can fully reach, piled up.
 
-Looking back over the six pieces, it's really only a few blocks. A capped loop (piece one), plus a set of clean-interfaced tools that let it act (piece two). The model interface is a thin provider wrapper (piece three), and context fights forgetting with layered compression (piece four). It can split itself and run concurrently, on the strength of restraint about shared state (piece five); the outermost CLI emits events, handles presentation, and plugs the path-traversal hole while it's at it (piece six). The engine adds up to just over thirteen hundred lines, and even with that CLI shell on top the whole package is only 2,284, with not a single spot you can't understand.
+Looking back over the six pieces, it's really only a few blocks. A capped loop (piece one), plus a set of clean-interfaced tools that let it act (piece two). The model interface is a thin provider wrapper (piece three), and context fights forgetting with layered compression (piece four). It can split itself and run concurrently, on the strength of restraint about shared state (piece five); the outermost CLI emits events, handles presentation, and plugs the path-traversal hole while it's at it (piece six). The engine adds up to just over thirteen hundred lines, and even with that CLI shell on top the whole package is only 2,286, with not a single spot you can't understand.
 
 Now you don't just understand it, you've forked it, plugged in your own model, added your own tool, and tuned its own temperament. It's yours.
 
