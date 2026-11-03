@@ -2,7 +2,7 @@
 
 The last two pieces covered the loop and the tools, the agent's hands and feet. This piece covers the brain's interface: how the model gets plugged in, how streaming output is handled, how to survive a provider acting up, and a question many tutorials skip but that you'll care about on day one after going live, namely how much this round actually cost.
 
-The file is `corecoder/llm.py`, 349 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
+The file is `corecoder/llm.py`, 353 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
 
 ## A bet: everyone looks like OpenAI
 
@@ -81,7 +81,7 @@ if chunk.usage:
 
 That `or 0` isn't redundant. Some providers send `usage` back but with null fields, and if you take it straight into the running total, `int + None` throws and brings the whole session down. One `or 0` flattens this dirty data. Another example of "a real API won't be as clean as the docs," where the person writing the wrapper layer has to pave over these pits for the layers above.
 
-The counted tokens accumulate into `total_prompt_tokens` and `total_completion_tokens`, which the CLI's `/tokens` command can query at any time.
+The counted tokens accumulate into `total_prompt_tokens` and `total_completion_tokens`, which the CLI's `/tokens` command can query at any time. Updates hold a small lock because a multi-agent team may finish several responses concurrently; sharing the connection must not silently lose part of the bill.
 
 ## The provider acts up, and we ride it out ourselves
 

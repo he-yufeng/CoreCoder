@@ -1,11 +1,12 @@
 [build-system]
-requires = ["hatchling"]
+# Hatchling 1.27 emits metadata 2.4, which CI's twine 6.2 accepts.
+requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "corecoder"
 version = "0.8.0"
-description = "Minimal AI coding agent (2,735 lines of Python) inspired by Claude Code. Works with any LLM. (formerly NanoCoder)"
+description = "Minimal AI coding agent (2,897 lines of Python) inspired by Claude Code. Works with any LLM. (formerly NanoCoder)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

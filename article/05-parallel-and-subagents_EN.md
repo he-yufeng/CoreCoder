@@ -73,37 +73,28 @@ I pull this passage out on its own because it's a particularly good teaching poi
 
 ## Sub-agents: spawning a clone of yourself
 
-The `agent` tool (`corecoder/tools/agent.py`, 72 lines) solves a different problem. Some subtasks are heavy, say "go over this unfamiliar codebase and tell me how authentication is implemented." If the main agent does this itself, it has to read a pile of files and run a bunch of searches, and all that intermediate process piles into the main conversation's window; by the time it's figured things out, the window is nearly stuffed with exploration garbage and the real task has no room left.
+The `agent` tool (`corecoder/tools/agent.py`, 143 lines) solves a different problem. Some subtasks are heavy, say "go over this unfamiliar codebase and tell me how authentication is implemented." If the main agent does this itself, it has to read a pile of files and run a bunch of searches, and all that intermediate process piles into the main conversation's window; by the time it's figured things out, the window is nearly stuffed with exploration garbage and the real task has no room left.
 
 The sub-agent's idea is: dispatch a clone with its own independent context to do this heavy work, let it churn in its own window, and hand back only a distilled conclusion when done. The main agent's window stays clean throughout, with just one extra line, "authentication is implemented this way."
 
-The code is straightforward:
+The single-task call is unchanged. A named task list adds a bounded fan-out through the same tool:
 
 ```python
-def execute(self, task: str) -> str:
-    if self._parent_agent is None:
-        return "Error: agent tool not initialized (no parent agent)"
-
-    from ..agent import Agent
-
-    parent = self._parent_agent
-    sub = Agent(
-        llm=parent.llm,
-        tools=[t for t in parent.tools if t.name != "agent"],  # no recursive agents
-        max_context_tokens=parent.context.max_tokens,
-        max_rounds=20,
-    )
-
-    try:
-        result = sub.chat(task)
-        if len(result) > 5000:
-            result = result[:4500] + "\n... (sub-agent output truncated)"
-        return f"[Sub-agent completed]\n{result}"
-    except Exception as e:
-        return f"Sub-agent error: {e}"
+def execute(self, task=None, tasks=None):
+    if (task is None) == (tasks is None):
+        return "Error: provide exactly one of 'task' or 'tasks'"
+    work = [{"name": "researcher", "task": "inspect"}, {"name": "reviewer", "task": "check"}]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(work))) as pool:
+        results = list(pool.map(lambda item: self._run_one(item, cwd), work))
+    reports = [f"### {item['name']}\n{result}" for item, result in zip(work, results)]
+    return "\n\n".join(reports)
 ```
 
-The main agent builds a new `Agent`, sharing the same LLM but with its own fresh `messages` list, which is the source of the context isolation. The sub-agent runs a complete loop of its own (its round cap dropped to 20), and if the returned result is too long it gets truncated to under 5000 characters, lest the space it painstakingly saved get canceled out by spitting back an overlong conclusion.
+Each worker is still a fresh `Agent` sharing the parent's LLM, but with its own `messages` and an empty checklist. Tool instances are shallow-copied, except that `agent` itself is removed. This gives each worker a complete, independent loop (with a 20-round cap), not a shared scratchpad with role labels. The returned report stays in input order even if the reviewer finishes first. An exception becomes that worker's result instead of cancelling the others.
+
+Parallel workers also expose two pieces of state that were harmless while sub-agents were serial. The LLM's token totals are now updated under a lock so concurrent responses don't lose usage, and the shared permission callback is serialized so two workers can't ask questions over each other on one terminal. Consent and hooks remain the parent's; cwd starts at the parent's tracked directory and is restored per worker. A result over 5,000 characters is still truncated before it reaches the parent's context.
+
+The optional `name` is deliberately small: it identifies the worker in its prompt and in the combined report. It doesn't install a role framework, a manager agent, or a second message bus. `examples/multi_agent_demo.py` runs three such roles offline and shows both independent reports and a reviewer challenging the proposed fix.
 
 Notice the line `_parent_agent`. It's wired up in the main `Agent`'s constructor, the loop mentioned back in piece one:
 
@@ -119,7 +110,7 @@ When constructing the agent, point each `AgentTool`'s "parent pointer" back at i
 
 That comment `# no recursive agents` above is the single most important line in this code.
 
-When spawning a sub-agent, its tool set is deliberately filtered to remove the `agent` tool itself: `[t for t in parent.tools if t.name != "agent"]`. So the sub-agent doesn't have the "spawn a clone" ability; whatever it can't do it has to tough out itself, and it can't dispatch further down.
+When spawning a sub-agent, its tools are shallow-copied but the `agent` tool itself is deliberately removed. So the sub-agent doesn't have the "spawn a clone" ability; whatever it can't do it has to tough out itself, and it can't dispatch further down.
 
 Why forbid it? Because a recursive agent is a bomb that can go out of control at any time. Imagine not forbidding it: the main agent dispatches a sub-agent, the sub-agent thinks the task is still too big and dispatches a grand-sub-agent, the grand-sub-agent dispatches again... each layer burns tokens, occupies threads, adds latency, and the model's judgment of "should this subtask be split further" isn't reliable; it can entirely fall into a bottomless pit of ever-finer splitting that never converges. Cutting recursion off cleanly is the most worry-free safety policy: a clone can be only one layer deep, and either this sub-agent handles it itself or it fails and returns, with no third outcome.
 
@@ -127,9 +118,9 @@ Remember piece one stressing that `_tool_by_name` is instance-level? Precisely b
 
 ## Compared with Claude Code
 
-Claude Code's sub-agent system (its AgentTool is over a thousand lines in public teardowns) is far richer: sub-agents have several run modes, including running in an independent git worktree and running asynchronously in the background, plus several built-in preset agent types, each with its own system prompt and tool set. CoreCoder converges all this into the most plain one: synchronous spawn, run and return, no recursion.
+Claude Code's sub-agent system (its AgentTool is over a thousand lines in public teardowns) is far richer: sub-agents have several run modes, including running in an independent git worktree and running asynchronously in the background, plus several built-in preset agent types, each with its own system prompt and tool set. CoreCoder keeps one small tool: a single call can fan out up to eight named workers, at most four at once, then joins their reports before returning. Recursion is still forbidden.
 
-But the core motivation, "use a sub-agent with independent context to isolate heavy work and protect the main window," is the same in both. Read CoreCoder's 53 lines and you've grasped the most essential point of multi-agent collaboration: it's a context-management means first, and a task-decomposition means second. Many people think a sub-agent is for "doing more work in parallel," but its greatest value is actually "keeping the noise of other work out of the main conversation."
+But the core motivation, "use a sub-agent with independent context to isolate heavy work and protect the main window," is the same in both. Read this one file and you've grasped the most essential point of multi-agent collaboration: it's a context-management means first, and a task-decomposition means second. Many people think a sub-agent is for "doing more work in parallel," but its greatest value is actually "keeping the noise of other work out of the main conversation."
 
 ## What this piece leaves you with
 
