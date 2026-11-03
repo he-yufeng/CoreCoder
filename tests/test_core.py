@@ -617,7 +617,8 @@ class TestLLMParamFallback:
 
 class TestReasoningPassthrough:
     """Thinking models stream reasoning_content next to content. It is shown
-    through on_reasoning but never mixed into the reply or the history."""
+    through on_reasoning and never mixed into the reply; on tool-call turns
+    it also re-enters the history (see TestReasoningContentEcho)."""
 
     @staticmethod
     def _make_llm():
@@ -687,6 +688,94 @@ class TestReasoningPassthrough:
         )
         assert reasoning_parts == ["ponder"]
         assert result.content == "answer"
+
+
+class TestReasoningContentEcho:
+    """Kimi and DeepSeek thinking models 400 the request after a tool call
+    unless that turn's reasoning_content comes back inside the assistant
+    message, so a tool-call turn carries it and other turns do not."""
+
+    @staticmethod
+    def _make_llm():
+        llm = LLM(model="kimi-k2.5", api_key="sk-test", temperature=1)
+        llm.client = mock.Mock()
+        return llm
+
+    @staticmethod
+    def _tool_call_stream():
+        from types import SimpleNamespace
+
+        def delta(**kw):
+            fields = {"content": None, "tool_calls": None, "reasoning_content": None}
+            fields.update(kw)
+            return SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(delta=SimpleNamespace(**fields))],
+            )
+
+        return [
+            delta(reasoning_content="I should "),
+            delta(reasoning_content="read the file first."),
+            delta(tool_calls=[SimpleNamespace(
+                index=0,
+                id="read_file:0",
+                function=SimpleNamespace(
+                    name="read_file", arguments='{"file_path": "a.py"}'),
+            )]),
+        ]
+
+    def test_tool_call_turn_echoes_reasoning_content(self):
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = self._tool_call_stream()
+        reasoning_parts = []
+        result = llm.chat(
+            messages=[{"role": "user", "content": "read a.py"}],
+            on_reasoning=reasoning_parts.append,
+        )
+        assert reasoning_parts == ["I should ", "read the file first."]
+        assert result.reasoning_content == "I should read the file first."
+        assert result.message["reasoning_content"] == "I should read the file first."
+        assert result.message["tool_calls"][0]["id"] == "read_file:0"
+
+    def test_plain_answer_keeps_reasoning_out_of_history(self):
+        from types import SimpleNamespace
+
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = [
+            SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(delta=SimpleNamespace(
+                    content="answer", tool_calls=None, reasoning_content="think"))],
+            ),
+        ]
+        result = llm.chat(messages=[{"role": "user", "content": "hi"}])
+        assert result.content == "answer"
+        assert "reasoning_content" not in result.message
+
+    def test_openrouter_reasoning_stays_display_only(self):
+        from types import SimpleNamespace
+
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = [
+            SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(delta=SimpleNamespace(
+                    content=None, reasoning="ponder",
+                    tool_calls=[SimpleNamespace(
+                        index=0,
+                        id="read_file:0",
+                        function=SimpleNamespace(
+                            name="read_file", arguments='{"file_path": "a.py"}'),
+                    )]))],
+            ),
+        ]
+        reasoning_parts = []
+        result = llm.chat(
+            messages=[{"role": "user", "content": "read a.py"}],
+            on_reasoning=reasoning_parts.append,
+        )
+        assert reasoning_parts == ["ponder"]
+        assert "reasoning_content" not in result.message
 
 
 class _DyingStream:

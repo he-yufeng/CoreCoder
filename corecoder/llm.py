@@ -30,12 +30,17 @@ class LLMResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    reasoning_content: str = ""
 
     @property
     def message(self) -> dict:
         """Convert to OpenAI message format for appending to history."""
         msg: dict = {"role": "assistant", "content": self.content or None}
         if self.tool_calls:
+            # thinking models (Kimi, DeepSeek) reject the follow-up request
+            # unless the turn's reasoning_content travels with its tool calls
+            if self.reasoning_content:
+                msg["reasoning_content"] = self.reasoning_content
             msg["tool_calls"] = [
                 {
                     "id": tc.id,
@@ -154,9 +159,11 @@ class LLM:
         """Send messages, stream back response, handle tool calls.
 
         on_reasoning, when given, receives reasoning_content deltas from
-        thinking models (deepseek-reasoner, kimi-k2-thinking, ...). Reasoning
-        is display-only: it never enters the history, since providers reject
-        it when sent back.
+        thinking models (deepseek-reasoner, kimi-k2-thinking, ...). The
+        reasoning_content itself is kept on the response and echoed back
+        with the turn's tool calls: current Kimi and DeepSeek thinking
+        models reject the follow-up request without it. Plain answers
+        carry none, and the OpenRouter `reasoning` field stays display-only.
         """
         params: dict = {
             "model": self.model,
@@ -209,6 +216,7 @@ class LLM:
     def _drain(self, stream, on_token, on_reasoning) -> LLMResponse:
         """Consume one stream into an LLMResponse."""
         content_parts: list[str] = []
+        reasoning_parts: list[str] = []
         tc_map: dict[int, dict] = {}  # index -> {id, name, arguments_str}
         prompt_tok = 0
         completion_tok = 0
@@ -230,9 +238,12 @@ class LLM:
             # thinking models stream their chain-of-thought separately; show
             # it when someone is listening, but never mix it into the reply.
             # reasoning_content is the DeepSeek/Kimi dialect, reasoning is
-            # what aggregators like OpenRouter normalize it to
-            reasoning = getattr(delta, "reasoning_content", None) or getattr(
-                delta, "reasoning", None)
+            # what aggregators like OpenRouter normalize it to; only the
+            # reasoning_content dialect is kept for the history echo
+            rc = getattr(delta, "reasoning_content", None)
+            if rc:
+                reasoning_parts.append(rc)
+            reasoning = rc or getattr(delta, "reasoning", None)
             if reasoning and on_reasoning:
                 on_reasoning(reasoning)
 
@@ -274,6 +285,7 @@ class LLM:
             tool_calls=parsed,
             prompt_tokens=prompt_tok,
             completion_tokens=completion_tok,
+            reasoning_content="".join(reasoning_parts),
         )
 
     def _call_with_retry(self, params: dict, max_retries: int = 3):
