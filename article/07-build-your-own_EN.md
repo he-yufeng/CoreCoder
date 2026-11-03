@@ -16,7 +16,7 @@ pip install -e .
 python -m pytest tests/ -q
 ```
 
-That last line should show 227 tests all green. Don't skip this step. It confirms your environment is clean, so that when you later break something you can be sure it was you who broke it, not the environment being broken to begin with. The tests this project ships with aren't decoration, they're your safety net while refactoring, and all those pits the earlier pieces kept mentioning (orphaned tool messages, concurrency races, path traversal) are pinned down by tests. Every time you change something next, you should come back and run this line.
+That last line should show 235 tests all green. Don't skip this step. It confirms your environment is clean, so that when you later break something you can be sure it was you who broke it, not the environment being broken to begin with. The tests this project ships with aren't decoration, they're your safety net while refactoring, and all those pits the earlier pieces kept mentioning (orphaned tool messages, concurrency races, path traversal) are pinned down by tests. Every time you change something next, you should come back and run this line.
 
 ## Step one: plug in your own model
 
@@ -171,7 +171,7 @@ CoreCoder is a starting point, not a destination. It deliberately leaves blanks 
 - **Add a fallback model and a hard dollar budget.** Piece three covered how CoreCoder deliberately skipped these two, because they drag in provider-specific logic. For a production deployment, these two eventually have to be added.
 - **Make concurrency finer-grained.** Piece five's point about distinguishing whether a tool "reads" or "writes" to decide whether it can run concurrently is something CoreCoder still doesn't do, and is worth filling in seriously.
 - **Hook up MCP.** Let your agent plug into the Model Context Protocol tool ecosystem, instantly connecting to a large batch of ready-made external capabilities.
-- **Give sub-agents more modes.** Piece five mentioned Claude Code's sub-agents can run in an independent worktree or in the background, while CoreCoder only did the most plain synchronous one.
+- **Give sub-agents more modes.** Piece five now covers named parallel workers with isolated contexts. Independent worktrees, asynchronous background execution and role-specific tool presets remain open directions.
 
 Pick one you genuinely need and do it. Don't let the length of the list make you anxious; the charm of an agent is exactly that its core is small enough for one person to read through in a weekend, and its frontier is open enough that you can grow in any direction.
 
@@ -179,7 +179,7 @@ Pick one you genuinely need and do it. Don't let the length of the list make you
 
 If this series leaves you with only one thing, I hope it's this: a coding agent is less mysterious than it seems, it's just a stack of engineering decisions you can fully reach, piled up.
 
-Looking back over the six pieces, it's really only a few blocks. A capped loop (piece one), plus a set of clean-interfaced tools that let it act (piece two). The model interface is a thin provider wrapper (piece three), and context fights forgetting with layered compression (piece four). It can split itself and run concurrently, on the strength of restraint about shared state (piece five); the outermost CLI emits events, handles presentation, and plugs the path-traversal hole while it's at it (piece six). The engine adds up to just over thirteen hundred lines, and even with that CLI shell on top the whole package is only 2,276, with not a single spot you can't understand.
+Looking back over the six pieces, it's really only a few blocks. A capped loop (piece one), plus a set of clean-interfaced tools that let it act (piece two). The model interface is a thin provider wrapper (piece three), and context fights forgetting with layered compression (piece four). It can split itself and run concurrently, on the strength of restraint about shared state (piece five); the outermost CLI emits events, handles presentation, and plugs the path-traversal hole while it's at it (piece six). The engine adds up to just under fourteen hundred lines, and even with that CLI shell on top the whole package is only 2,353, with not a single spot you can't understand.
 
 Now you don't just understand it, you've forked it, plugged in your own model, added your own tool, and tuned its own temperament. It's yours.
 

@@ -73,37 +73,28 @@ _local.cwd = running
 
 ## 子 agent：给自己开一个分身
 
-`agent` 工具（`corecoder/tools/agent.py`，72 行）解决的是另一个问题。有些子任务很重，比如「把这个陌生代码库摸一遍，告诉我认证是怎么实现的」。这种活如果让主 agent 自己干，它得读一大堆文件、跑一堆搜索，这些中间过程全堆进主对话的窗口，等它摸清楚了，窗口也被探索垃圾塞得差不多了，真正的任务反而没空间了。
+`agent` 工具（`corecoder/tools/agent.py`，143 行）解决的是另一个问题。有些子任务很重，比如「把这个陌生代码库摸一遍，告诉我认证是怎么实现的」。这种活如果让主 agent 自己干，它得读一大堆文件、跑一堆搜索，这些中间过程全堆进主对话的窗口，等它摸清楚了，窗口也被探索垃圾塞得差不多了，真正的任务反而没空间了。
 
 子 agent 的思路是：派一个有独立上下文的分身去干这件重活，它在自己的窗口里折腾，干完只把一个精简结论交回来。主 agent 的窗口始终干净，只多了一句「认证是这么实现的」。
 
-代码很直白：
+单个任务的调用保持不变，命名任务列表在同一个工具上加了有界 fan-out：
 
 ```python
-def execute(self, task: str) -> str:
-    if self._parent_agent is None:
-        return "Error: agent tool not initialized (no parent agent)"
-
-    from ..agent import Agent
-
-    parent = self._parent_agent
-    sub = Agent(
-        llm=parent.llm,
-        tools=[t for t in parent.tools if t.name != "agent"],  # no recursive agents
-        max_context_tokens=parent.context.max_tokens,
-        max_rounds=20,
-    )
-
-    try:
-        result = sub.chat(task)
-        if len(result) > 5000:
-            result = result[:4500] + "\n... (sub-agent output truncated)"
-        return f"[Sub-agent completed]\n{result}"
-    except Exception as e:
-        return f"Sub-agent error: {e}"
+def execute(self, task=None, tasks=None):
+    if (task is None) == (tasks is None):
+        return "Error: provide exactly one of 'task' or 'tasks'"
+    work = [{"name": "researcher", "task": "inspect"}, {"name": "reviewer", "task": "check"}]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(work))) as pool:
+        results = list(pool.map(lambda item: self._run_one(item, cwd), work))
+    reports = [f"### {item['name']}\n{result}" for item, result in zip(work, results)]
+    return "\n\n".join(reports)
 ```
 
-主 agent 造一个新的 `Agent`，共享同一个 LLM，但有它自己全新的 `messages` 列表，这就是上下文隔离的来源。子 agent 跑完一个完整的循环（它自己的轮次上限压到了 20），返回的结果如果太长还会截到 5000 字符以内，免得它辛辛苦苦省下来的空间又被一个超长结论吐回去抵消掉。
+每个 worker 仍是全新的 `Agent`，共享父 agent 的 LLM，但有自己的 `messages` 和空任务清单。工具实例做浅拷贝，`agent` 工具本身则被移除。它跑的是完整且独立的循环（轮次上限 20），不是挂着角色名共用一块草稿板。即使 reviewer 最先完成，汇总报告仍按输入顺序排列；某个 worker 的异常只成为它自己的结果，不会取消其他 worker。
+
+并行 worker 还暴露了两份在串行时代不显眼的状态：LLM 的 token 总数现在在锁内累加，避免并发回包漏记；共享的权限确认回调也串行执行，避免两个 worker 在同一个终端上互相抢话。权限与 hooks 仍沿用父 agent 的，cwd 从父 agent 当前目录开始、每个 worker 结束后恢复。超过 5000 字的结果仍先截断，再送回父上下文。
+
+可选的 `name` 只负责给 worker 在提示词和汇总报告里一个身份，不引入角色框架、manager agent 或第二条消息总线。`examples/multi_agent_demo.py` 用三个这样的角色离线跑通，既给出各自结论，也让 reviewer 对拟议修复提出反例。
 
 注意那行 `_parent_agent`。它是在主 `Agent` 的构造函数里接上的，就是第一篇提过的那个循环：
 
@@ -119,7 +110,7 @@ for t in self.tools:
 
 上面那行注释 `# no recursive agents` 是这段代码里最重要的一句。
 
-派生子 agent 时，给它的工具集被刻意过滤掉了 `agent` 工具本身：`[t for t in parent.tools if t.name != "agent"]`。于是子 agent 手里没有「开分身」这个能力，它干不了的事只能自己硬扛，不能再往下派。
+派生子 agent 时，工具实例会浅拷贝，但 `agent` 工具本身被刻意移除。于是子 agent 手里没有「开分身」这个能力，它干不了的事只能自己硬扛，不能再往下派。
 
 为什么要禁？因为递归的 agent 是一颗随时会失控的炸弹。设想不禁会怎样：主 agent 派了个子 agent，子 agent 觉得任务还是太大又派了孙 agent，孙 agent 再派……每一层都在烧 token、占线程、加延迟，而且模型对「这个子任务该不该再拆」的判断并不可靠，它完全可能陷进一个越拆越细、永远收不拢的无底洞。一刀切死递归，是最省心的安全策略：分身只能有一层，要么这个子 agent 自己搞定，要么它失败返回，没有第三种走向。
 
@@ -127,9 +118,9 @@ for t in self.tools:
 
 ## 和 Claude Code 的对照
 
-Claude Code 的子 agent 系统（它的 AgentTool 公开拆解里超过一千行）要丰富得多：子 agent 有好几种运行模式，包括在独立的 git worktree 里跑、在后台异步跑；还内置了若干种预设的 agent 类型，各有各的系统提示和工具集。CoreCoder 把这一切收敛成最朴素的一种：同步派生、跑完返回、不准递归。
+Claude Code 的子 agent 系统（它的 AgentTool 公开拆解里超过一千行）要丰富得多：子 agent 有好几种运行模式，包括在独立的 git worktree 里跑、在后台异步跑；还内置了若干种预设的 agent 类型，各有各的系统提示和工具集。CoreCoder 仍只保留一个小工具：一次调用最多 fan-out 8 个命名 worker、同时最多 4 个，收齐报告后返回。递归依然禁止。
 
-但「用独立上下文的子 agent 来隔离重活、保护主窗口」这个核心动机，两者是一样的。读懂 CoreCoder 这 53 行，你就抓住了多 agent 协作最本质的那一点：它首先是个上下文管理手段，其次才是个任务分解手段。很多人以为子 agent 是为了「并行干更多活」，其实它最大的价值是「把别的活的噪音挡在主对话之外」。
+但「用独立上下文的子 agent 来隔离重活、保护主窗口」这个核心动机，两者是一样的。读懂这一个文件，你就抓住了多 agent 协作最本质的那一点：它首先是个上下文管理手段，其次才是个任务分解手段。很多人以为子 agent 是为了「并行干更多活」，其实它最大的价值是「把别的活的噪音挡在主对话之外」。
 
 ## 这一篇带走什么
 

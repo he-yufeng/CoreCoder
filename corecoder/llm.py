@@ -10,6 +10,7 @@ single unified interface. Set CORECODER_PROVIDER=litellm.
 """
 
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,6 +132,7 @@ class LLM:
         self.extra = kwargs  # temperature, max_tokens, etc.
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self._usage_lock = threading.Lock()
 
     @property
     def estimated_cost(self) -> float | None:
@@ -266,8 +268,9 @@ class LLM:
                 args = {}
             parsed.append(ToolCall(id=raw["id"], name=raw["name"], arguments=args))
 
-        self.total_prompt_tokens += prompt_tok
-        self.total_completion_tokens += completion_tok
+        with self._usage_lock:
+            self.total_prompt_tokens += prompt_tok
+            self.total_completion_tokens += completion_tok
 
         return LLMResponse(
             content="".join(content_parts),
@@ -322,6 +325,7 @@ class LiteLLM(LLM):
         self.extra = kwargs
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self._usage_lock = threading.Lock()
 
     def _call_with_retry(self, params: dict, max_retries: int = 3):
         """Retry on transient errors with exponential backoff via litellm."""

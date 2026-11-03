@@ -15,6 +15,7 @@ the loop survives and the model can route around it.
 """
 
 import json
+import threading
 from pathlib import Path
 
 DEFAULT_STORE = Path.home() / ".corecoder" / "permissions.json"
@@ -32,6 +33,7 @@ class Permission:
         self.allow_all = allow_all
         self._always: set[str] = set()
         self._persist_path = persist_path
+        self._lock = threading.RLock()
         if persist_path is not None:
             try:
                 saved = json.loads(persist_path.read_text(encoding="utf-8"))
@@ -42,6 +44,10 @@ class Permission:
     def check(self, tool_name: str, arguments: dict) -> str | None:
         """Decide one call. None lets it through; a string is the refusal
         the model receives as its tool result."""
+        with self._lock:
+            return self._check(tool_name, arguments)
+
+    def _check(self, tool_name: str, arguments: dict) -> str | None:
         if tool_name in self.READ_ONLY or self.allow_all or tool_name in self._always:
             return None
         if self.ask is None:

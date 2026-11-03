@@ -2,7 +2,7 @@
 
 前两篇讲的是循环和工具，也就是 agent 的手脚。这一篇讲大脑接口：模型怎么接进来，流式输出怎么处理，provider 抽风了怎么扛，以及一个被很多教程跳过、但你上线后第一天就会关心的问题，这一轮到底花了多少钱。
 
-对应的文件是 `corecoder/llm.py`，349 行，是引擎里最大的单文件。它大，是因为它替你扛下了和真实 API 打交道时所有不优雅的部分。
+对应的文件是 `corecoder/llm.py`，353 行，是引擎里最大的单文件。它大，是因为它替你扛下了和真实 API 打交道时所有不优雅的部分。
 
 ## 一个赌注：大家都长得像 OpenAI
 
@@ -81,7 +81,7 @@ if chunk.usage:
 
 那个 `or 0` 不是多余的。有些 provider 会把 `usage` 发回来但字段是 `null`，要是直接拿去和累计值相加，`int + None` 会抛异常，把整个会话搞挂。一句 `or 0` 把这种脏数据压平。这又是一个「真实 API 不会按文档那么干净」的例子，写包装层的人得替上层把这些坑都垫平。
 
-数出来的 token 累加进 `total_prompt_tokens` 和 `total_completion_tokens`，CLI 的 `/tokens` 命令随时能查。
+数出来的 token 累加进 `total_prompt_tokens` 和 `total_completion_tokens`，CLI 的 `/tokens` 命令随时能查。累加由一把小锁保护，因为 multi-agent 团队可能同时完成多次响应；共享连接不能悄悄漏掉一部分账单。
 
 ## provider 抽风了，自己扛
 
