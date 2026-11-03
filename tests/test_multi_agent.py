@@ -63,6 +63,7 @@ def test_single_sub_agent_keeps_its_existing_contract(monkeypatch):
 def test_named_sub_agents_overlap_and_report_in_input_order(monkeypatch):
     parent, tool, parent_todo = parent_agent()
     barrier = threading.Barrier(3)
+    completed = {role: threading.Event() for role in ("researcher", "implementer", "reviewer")}
     events = []
     children = {}
 
@@ -75,9 +76,12 @@ def test_named_sub_agents_overlap_and_report_in_input_order(monkeypatch):
             "messages": self.messages + [{"role": "user", "content": text}],
         }
         barrier.wait(timeout=2)
-        delay = {"researcher": 0.03, "implementer": 0.02, "reviewer": 0.01}[role]
-        time.sleep(delay)
+        if role == "implementer":
+            assert completed["reviewer"].wait(timeout=2)
+        elif role == "researcher":
+            assert completed["implementer"].wait(timeout=2)
         events.append(role)
+        completed[role].set()
         return f"{role} report"
 
     monkeypatch.setattr(Agent, "chat", fake_chat)
@@ -93,7 +97,8 @@ def test_named_sub_agents_overlap_and_report_in_input_order(monkeypatch):
     assert "### researcher\nresearcher report" in result
     assert set(children) == {"researcher", "implementer", "reviewer"}
     assert len({child["id"] for child in children.values()}) == 3
-    for role, task in zip(children, ("inspect", "fix", "check")):
+    expected_tasks = {"researcher": "inspect", "implementer": "fix", "reviewer": "check"}
+    for role, task in expected_tasks.items():
         child = children[role]
         assert child["has_agent_tool"] is False
         assert child["todo_tasks"] == []
