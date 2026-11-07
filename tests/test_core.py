@@ -616,8 +616,8 @@ class TestLLMParamFallback:
 
 
 class TestReasoningPassthrough:
-    """Thinking models stream reasoning_content next to content. It is shown
-    through on_reasoning but never mixed into the reply or the history."""
+    """Thinking-model reasoning is shown separately from the reply. Plain
+    answers keep their existing history shape without reasoning fields."""
 
     @staticmethod
     def _make_llm():
@@ -687,6 +687,200 @@ class TestReasoningPassthrough:
         )
         assert reasoning_parts == ["ponder"]
         assert result.content == "answer"
+
+
+class TestReasoningToolHistory:
+    """Thinking-model tool turns must carry their reasoning into the next request."""
+
+    @staticmethod
+    def _make_llm():
+        llm = LLM(model="kimi-k2.5", api_key="sk-test", temperature=1)
+        llm.client = mock.Mock()
+        return llm
+
+    @staticmethod
+    def _chunk(reasoning_content=None, reasoning=None, tool_calls=None):
+        from types import SimpleNamespace
+
+        delta = SimpleNamespace(
+            content=None,
+            tool_calls=tool_calls,
+            reasoning_content=reasoning_content,
+        )
+        if reasoning is not None:
+            delta.reasoning = reasoning
+        return SimpleNamespace(
+            usage=None,
+            choices=[SimpleNamespace(delta=delta)],
+        )
+
+    @staticmethod
+    def _tool_call():
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                index=0,
+                id="read_file:0",
+                type="function",
+                function=SimpleNamespace(
+                    name="read_file",
+                    arguments='{"file_path":"a.py"}',
+                ),
+            )
+        ]
+
+    def test_tool_call_message_preserves_reasoning_content(self):
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = [
+            self._chunk(reasoning_content="think "),
+            self._chunk(reasoning_content="hard", tool_calls=self._tool_call()),
+        ]
+        reasoning_parts = []
+
+        result = llm.chat(
+            messages=[{"role": "user", "content": "read a.py"}],
+            on_reasoning=reasoning_parts.append,
+        )
+
+        assert result.reasoning_content == "think hard"
+        assert result.message["reasoning_content"] == "think hard"
+        assert result.message["content"] is None
+        assert reasoning_parts == ["think ", "hard"]
+
+    def test_tool_call_message_preserves_explicit_empty_reasoning(self):
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = [
+            self._chunk(reasoning_content=""),
+            self._chunk(tool_calls=self._tool_call()),
+        ]
+
+        result = llm.chat(messages=[{"role": "user", "content": "read a.py"}])
+
+        assert result.reasoning_content == ""
+        assert "reasoning_content" in result.message
+        assert result.message["reasoning_content"] == ""
+
+    def test_tool_call_message_omits_absent_reasoning(self):
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = [
+            self._chunk(tool_calls=self._tool_call()),
+        ]
+
+        result = llm.chat(messages=[{"role": "user", "content": "read a.py"}])
+
+        assert result.reasoning_content is None
+        assert "reasoning_content" not in result.message
+
+    def test_openrouter_reasoning_remains_display_only(self):
+        llm = self._make_llm()
+        llm.client.chat.completions.create.return_value = [
+            self._chunk(reasoning="ponder"),
+            self._chunk(tool_calls=self._tool_call()),
+        ]
+        reasoning_parts = []
+
+        result = llm.chat(
+            messages=[{"role": "user", "content": "read a.py"}],
+            on_reasoning=reasoning_parts.append,
+        )
+
+        assert result.reasoning_content is None
+        assert "reasoning_content" not in result.message
+        assert reasoning_parts == ["ponder"]
+
+    def test_agent_sends_reasoning_on_the_tool_continuation(self, tmp_path):
+        try:
+            import httpx
+        except ModuleNotFoundError:
+            import httpx2 as httpx
+
+        from openai import OpenAI
+
+        source = tmp_path / "a.py"
+        source.write_text("answer = 42\n", encoding="utf-8")
+        requests = []
+
+        def stream(deltas):
+            chunks = "".join(
+                "data: {}\n\n".format(
+                    json.dumps(
+                        {
+                            "id": "chatcmpl-test",
+                            "object": "chat.completion.chunk",
+                            "created": 0,
+                            "model": "kimi-k2.5",
+                            "choices": [{"index": 0, "delta": delta}],
+                        }
+                    )
+                )
+                for delta in deltas
+            )
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=chunks + "data: [DONE]\n\n",
+            )
+
+        def kimi(request):
+            payload = json.loads(request.content)
+            requests.append(payload)
+            if len(requests) == 1:
+                return stream(
+                    [
+                        {"reasoning_content": "I should read the file first."},
+                        {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "read_file:0",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": json.dumps({"file_path": str(source)}),
+                                    },
+                                }
+                            ]
+                        },
+                    ]
+                )
+
+            tool_turns = [
+                message for message in payload["messages"] if message.get("role") == "assistant" and message.get("tool_calls")
+            ]
+            if not tool_turns or "reasoning_content" not in tool_turns[-1]:
+                return httpx.Response(
+                    400,
+                    json={
+                        "error": {
+                            "message": "thinking is enabled but reasoning_content is missing "
+                            "in assistant tool call message at index 2",
+                            "type": "invalid_request_error",
+                        },
+                    },
+                )
+            return stream([{"content": "Read complete"}])
+
+        llm = LLM(
+            model="kimi-k2.5",
+            api_key="sk-test",
+            base_url="https://api.moonshot.ai/v1",
+            temperature=1,
+        )
+        llm.client = OpenAI(
+            api_key="sk-test",
+            base_url="https://api.moonshot.ai/v1",
+            http_client=httpx.Client(transport=httpx.MockTransport(kimi)),
+        )
+        agent = Agent(llm, tools=[get_tool("read_file")])
+
+        assert agent.chat("Read a.py") == "Read complete"
+        assert len(requests) == 2
+        continued = requests[1]["messages"]
+        assistant = next(message for message in continued if message.get("role") == "assistant" and message.get("tool_calls"))
+        assert assistant["reasoning_content"] == "I should read the file first."
+        tool_result = next(message for message in continued if message.get("role") == "tool")
+        assert "answer = 42" in tool_result["content"]
 
 
 class _DyingStream:
