@@ -570,15 +570,51 @@ class TestLLMParamFallback:
         assert retry_kwargs["max_completion_tokens"] == 1024
         assert "max_tokens" not in retry_kwargs
 
-    def test_temperature_dropped_when_rejected(self):
+    @pytest.mark.parametrize("message", [
+        "Unsupported value: 'temperature' does not support 0.7 with this model.",
+        "invalid temperature: only 1 is allowed for this model",
+    ])
+    def test_temperature_dropped_when_rejected(self, message):
         llm = self._make_llm()
-        create = self._chat_with_failures(
-            llm,
-            [self._bad_request("Unsupported value: 'temperature' does not support 0.7 with this model.")],
-        )
+        create = self._chat_with_failures(llm, [self._bad_request(message)])
         retry_kwargs = create.call_args_list[-1][1]
         assert "temperature" not in retry_kwargs
         assert retry_kwargs["max_tokens"] == 1024
+        assert retry_kwargs["stream_options"] == {"include_usage": True}
+        assert create.call_count == 2
+
+    def test_kimi_temperature_rejection_uses_provider_default(self):
+        try:
+            import httpx
+        except ModuleNotFoundError:
+            import httpx2 as httpx
+        from openai import OpenAI
+
+        requests = []
+
+        def kimi(request):
+            payload = json.loads(request.content)
+            requests.append(payload)
+            if payload.get("temperature", 1) != 1:
+                return httpx.Response(400, json={"error": {
+                    "message": "invalid temperature: only 1 is allowed for this model",
+                    "type": "invalid_request_error",
+                }})
+            chunk = {"id": "reply", "object": "chat.completion.chunk", "created": 0,
+                     "model": "kimi-k3", "choices": [{"index": 0, "delta": {"content": "ok"}}]}
+            return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                  text="data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n")
+
+        llm = LLM(model="kimi-k3", api_key="sk-test", base_url="https://api.moonshot.ai/v1", temperature=0.0)
+        llm.client = OpenAI(api_key="sk-test", base_url="https://api.moonshot.ai/v1", max_retries=0,
+                            http_client=httpx.Client(transport=httpx.MockTransport(kimi)))
+
+        assert llm.chat([{"role": "user", "content": "hi"}]).content == "ok"
+        assert len(requests) == 2
+        assert requests[0]["temperature"] == 0.0
+        assert "temperature" not in requests[1]
+        assert requests[1]["stream_options"] == {"include_usage": True}
+        assert llm.extra["temperature"] == 0.0
 
     def test_stream_options_still_dropped_on_first_400(self):
         llm = self._make_llm()

@@ -108,7 +108,7 @@ def _adapt_rejected_param(params: dict, exc: BadRequestError) -> bool:
 
     Newer OpenAI models (gpt-5, o-series) accept only ``max_completion_tokens``
     and the default temperature; the 400 message quotes the offender
-    (``'max_tokens'``). Quoted matching is load-bearing: the rejection text
+    (``'max_tokens'``). Keep that name quoted: the rejection text
     for ``max_completion_tokens`` must not re-trigger the translation.
     Returns False when nothing recognizable was rejected.
     """
@@ -116,7 +116,7 @@ def _adapt_rejected_param(params: dict, exc: BadRequestError) -> bool:
     if "'max_tokens'" in message and "max_tokens" in params:
         params["max_completion_tokens"] = params.pop("max_tokens")
         return True
-    if "'temperature'" in message and "temperature" in params:
+    if "temperature" in message and "temperature" in params:
         params.pop("temperature")
         return True
     return False
@@ -172,7 +172,7 @@ class LLM:
         if tools:
             params["tools"] = tools
 
-        # Provider-dialect fallbacks. A 400 that quotes a parameter is adapted
+        # Provider-dialect fallbacks. A 400 that names a parameter is adapted
         # (newer OpenAI models take max_completion_tokens, default temperature
         # only); a 400 that names nothing drops stream_options once, matching
         # the previous single-fallback behavior for servers that reject the
