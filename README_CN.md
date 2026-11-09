@@ -38,7 +38,7 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1405 行。连最外层的 CLI、配置、打包一起算，整个包 25 个文件、物理 2908 行、净 2364 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
 
-它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头，240 个测试是绿的。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
+它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 242 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
 代码来自一次公开拆解。公开的源码分析里，Claude Code 这类生产级 agent 暴露出不少关键架构，我挑出最核心的一层，用尽量少的代码诚实地复写了一遍。所以读 CoreCoder，约等于读一份基于公开源码分析的「可运行注释版」：讲的是这类 agent 的核心思路，而它本身只是最小复写，就摆在你机器上，随你拆、随你改。
 
@@ -71,6 +71,8 @@ pip install -e .
 | DeepSeek | `OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.deepseek.com CORECODER_MODEL=deepseek-chat` |
 | OmniRoute | `OPENAI_API_KEY=your-key OPENAI_BASE_URL=http://localhost:20128/v1 CORECODER_MODEL=auto` |
 | 本地 Ollama | `OPENAI_API_KEY=ollama OPENAI_BASE_URL=http://localhost:11434/v1 CORECODER_MODEL=qwen2.5-coder` |
+
+如果服务用 400 错误指出 `temperature` 不受支持，CoreCoder 会移除这个参数重试，采用服务端支持的默认值。Kimi 不带引号的报错也能识别，无需额外设置 `CORECODER_TEMPERATURE`。
 
 Kimi、Qwen 这些同样是改这两个变量；连 OpenAI 兼容接口都不给的 provider，装上可选的 LiteLLM 后端（`pip install "corecoder[litellm]"`）能路由一百多家。第三篇文章把这块讲得更细。思考模型也是一等公民：deepseek-reasoner、kimi-k3 这类模型的思考过程会实时流出来，CoreCoder 把它用暗色显示出来。普通回答不把思考过程放进对话历史；Kimi 和 DeepSeek 的工具调用轮则按 thinking 协议要求，把 `reasoning_content` 带进下一次请求。key 可以直接 `export`，也可以在项目根目录扔个 `.env`，启动时自动加载。然后：
 
