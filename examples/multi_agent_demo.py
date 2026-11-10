@@ -48,6 +48,22 @@ def run_demo() -> int:
         ]
     )
     print(result)
+    dependent = tool.execute(
+        tasks=[
+            {"name": "researcher", "task": "Find semantic risks in sorted(set(records))."},
+            {
+                "name": "implementer",
+                "task": "Propose an order-preserving deduplication using the research.",
+                "depends_on": ["researcher"],
+            },
+            {
+                "name": "reviewer",
+                "task": "Review the research and proposed fix for unhashable records.",
+                "depends_on": ["researcher", "implementer"],
+            },
+        ]
+    )
+    print("\n[Dependent pipeline]\n" + dependent)
     print(f"\nThree workers reported in {time.monotonic() - started:.2f}s (offline scripted findings).")
     return 0
 

@@ -28,6 +28,8 @@ def test_multi_agent_schema_accepts_named_tasks():
     assert tasks["maxItems"] == 8
     assert tasks["items"]["required"] == ["task"]
     assert "name" in tasks["items"]["properties"]
+    assert tasks["items"]["properties"]["depends_on"]["type"] == "array"
+    assert tasks["items"]["properties"]["depends_on"]["items"] == {"type": "string"}
     assert schema["anyOf"] == [{"required": ["task"]}, {"required": ["tasks"]}]
 
 
@@ -38,6 +40,7 @@ def test_offline_multi_agent_demo(capsys):
     assert "### implementer" in output
     assert "### reviewer" in output
     assert "unhashable records" in output
+    assert "Dependent pipeline" in output
 
 
 def test_single_sub_agent_keeps_its_existing_contract(monkeypatch):
@@ -119,6 +122,89 @@ def test_multi_agent_failure_does_not_cancel_siblings(monkeypatch):
     result = tool.execute(tasks=[{"task": "healthy"}, {"task": "broken"}])
     assert "healthy report" in result
     assert "Sub-agent error: synthetic failure" in result
+
+
+def test_multi_agent_dependencies_share_results_in_dependency_order(monkeypatch):
+    _, tool, _ = parent_agent()
+    events = []
+    prompts = {}
+
+    def fake_chat(self, text, **kwargs):
+        role = text.split("\n", 1)[0].removeprefix("You are ").removesuffix(".")
+        prompts[role] = text
+        events.append(("start", role))
+        if role == "implementer":
+            assert ("end", "researcher") in events
+            assert "researcher report" in text
+        elif role == "reviewer":
+            assert ("end", "implementer") in events
+            assert "implementer report" in text
+        events.append(("end", role))
+        return f"{role} report"
+
+    monkeypatch.setattr(Agent, "chat", fake_chat)
+    result = tool.execute(
+        tasks=[
+            {"name": "reviewer", "task": "Review both outputs", "depends_on": ["implementer"]},
+            {"name": "implementer", "task": "Use the research", "depends_on": ["researcher"]},
+            {"name": "researcher", "task": "Inspect first"},
+        ]
+    )
+
+    assert events.index(("end", "researcher")) < events.index(("start", "implementer"))
+    assert events.index(("end", "implementer")) < events.index(("start", "reviewer"))
+    assert result.index("### reviewer") < result.index("### implementer") < result.index("### researcher")
+    assert "researcher report" in prompts["implementer"]
+    assert "implementer report" in prompts["reviewer"]
+
+
+def test_multi_agent_failed_dependency_skips_downstream_but_not_independent_work(monkeypatch):
+    _, tool, _ = parent_agent()
+    started = []
+
+    def fake_chat(self, text, **kwargs):
+        role = text.split("\n", 1)[0].removeprefix("You are ").removesuffix(".")
+        started.append(role)
+        if role == "researcher":
+            raise RuntimeError("research failed")
+        return f"{role} report"
+
+    monkeypatch.setattr(Agent, "chat", fake_chat)
+    result = tool.execute(
+        tasks=[
+            {"name": "researcher", "task": "fail"},
+            {"name": "implementer", "task": "must not start", "depends_on": ["researcher"]},
+            {"name": "reviewer", "task": "independent review"},
+        ]
+    )
+
+    assert started == ["researcher", "reviewer"]
+    assert "Sub-agent skipped: dependency 'researcher' failed" in result
+    assert "reviewer report" in result
+
+
+def test_multi_agent_rejects_invalid_dependencies_without_spawning(monkeypatch):
+    _, tool, _ = parent_agent()
+
+    def unexpected_chat(self, text, **kwargs):
+        raise AssertionError("invalid work must not spawn")
+
+    monkeypatch.setattr(Agent, "chat", unexpected_chat)
+    invalid_calls = [
+        {"tasks": [{"name": "same", "task": "one"}, {"name": "same", "task": "two"}]},
+        {"tasks": [{"name": "one", "task": "one", "depends_on": ["missing"]}]},
+        {"tasks": [{"name": "one", "task": "one", "depends_on": ["one"]}]},
+        {
+            "tasks": [
+                {"name": "one", "task": "one", "depends_on": ["two"]},
+                {"name": "two", "task": "two", "depends_on": ["one"]},
+            ]
+        },
+        {"tasks": [{"name": "one", "task": "one", "depends_on": "researcher"}]},
+        {"tasks": [{"name": "one", "task": "one", "depends_on": ["  "]}]},
+    ]
+    for kwargs in invalid_calls:
+        assert tool.execute(**kwargs).startswith("Error:")
 
 
 def test_multi_agent_rejects_ambiguous_or_unbounded_work(monkeypatch):

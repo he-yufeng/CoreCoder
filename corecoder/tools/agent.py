@@ -48,6 +48,11 @@ class AgentTool(Tool):
                             "type": "string",
                             "description": "What this worker should accomplish",
                         },
+                        "depends_on": {
+                            "type": "array",
+                            "description": "Worker names that must finish successfully before this worker starts",
+                            "items": {"type": "string"},
+                        },
                     },
                     "required": ["task"],
                 },
@@ -86,7 +91,40 @@ class AgentTool(Tool):
             hooks=parent.hooks,
         )
 
-    def _run_one(self, item: dict, cwd: str | None) -> str:
+    def _dependency_waves(self, work: list[dict]) -> list[list[dict]]:
+        by_name = {}
+        for item in work:
+            name = item["name"]
+            if name in by_name:
+                raise ValueError(f"duplicate worker name {name!r}")
+            by_name[name] = item
+        for item in work:
+            dependencies = item.get("depends_on", [])
+            if not isinstance(dependencies, list) or any(
+                not isinstance(dependency, str) or not dependency.strip() for dependency in dependencies
+            ):
+                raise ValueError(f"worker {item['name']!r} has an invalid depends_on list")
+            item["depends_on"] = [dependency.strip() for dependency in dependencies]
+            for dependency in item["depends_on"]:
+                if dependency == item["name"]:
+                    raise ValueError(f"worker {item['name']!r} depends on itself")
+                if dependency not in by_name:
+                    raise ValueError(f"worker {item['name']!r} depends on unknown worker {dependency!r}")
+
+        pending = work[:]
+        completed = set()
+        waves = []
+        while pending:
+            ready = [item for item in pending if all(name in completed for name in item["depends_on"])]
+            if not ready:
+                raise ValueError("worker dependency cycle detected")
+            waves.append(ready)
+            completed.update(item["name"] for item in ready)
+            ready_names = {item["name"] for item in ready}
+            pending = [item for item in pending if item["name"] not in ready_names]
+        return waves
+
+    def _run_one(self, item: dict, cwd: str | None, dependency_reports: dict | None = None) -> str:
         # Each worker gets the session cwd without leaking its own cd back.
         from .bash import get_tracked_cwd, set_tracked_cwd
 
@@ -95,6 +133,10 @@ class AgentTool(Tool):
             set_tracked_cwd(cwd)
             name = item.get("name")
             prompt = item["task"] if name is None else f"You are {name}.\n\n{item['task']}"
+            if dependency_reports:
+                prompt += "\n\nCompleted upstream reports:\n" + "\n\n".join(
+                    f"### {dependency}\n{report}" for dependency, report in dependency_reports.items()
+                )
             result = self._new_subagent().chat(prompt)
             if len(result) > 5000:
                 result = result[:4500] + "\n... (sub-agent output truncated)"
@@ -125,7 +167,13 @@ class AgentTool(Tool):
                     return f"Error: task {i} needs a non-empty 'task' string"
                 if name is not None and (not isinstance(name, str) or not name.strip()):
                     return f"Error: task {i} needs a non-empty 'name' when provided"
-                work.append({"task": prompt, "name": name.strip() if name else f"agent-{i}"})
+                work.append(
+                    {
+                        "task": prompt,
+                        "name": name.strip() if name else f"agent-{i}",
+                        "depends_on": item.get("depends_on", []),
+                    }
+                )
 
         from .bash import get_tracked_cwd
 
@@ -136,8 +184,41 @@ class AgentTool(Tool):
                 return result
             return f"[Sub-agent completed]\n{result}"
 
-        # pool.map returns in task order even when workers finish out of order.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(work))) as pool:
-            results = list(pool.map(lambda item: self._run_one(item, cwd), work))
-        reports = [f"### {item['name']}\n{result}" for item, result in zip(work, results)]
+        try:
+            waves = self._dependency_waves(work)
+        except ValueError as e:
+            return f"Error: {e}"
+
+        results = {}
+        for wave in waves:
+            ready = []
+            for item in wave:
+                failed_dependency = next(
+                    (
+                        dependency
+                        for dependency in item["depends_on"]
+                        if results[dependency].startswith(("Sub-agent error:", "Sub-agent skipped:"))
+                    ),
+                    None,
+                )
+                if failed_dependency is not None:
+                    results[item["name"]] = f"Sub-agent skipped: dependency {failed_dependency!r} failed"
+                else:
+                    ready.append(item)
+            if not ready:
+                continue
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(ready))) as pool:
+                completed = list(
+                    pool.map(
+                        lambda item: self._run_one(
+                            item,
+                            cwd,
+                            {dependency: results[dependency] for dependency in item["depends_on"]},
+                        ),
+                        ready,
+                    )
+                )
+            results.update({item["name"]: result for item, result in zip(ready, completed)})
+
+        reports = [f"### {item['name']}\n{results[item['name']]}" for item in work]
         return f"[Sub-agent team: {len(work)} reports]\n\n" + "\n\n".join(reports)
