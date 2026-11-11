@@ -91,7 +91,7 @@ def list_sessions() -> list[dict]:
                 "saved_at": data.get("saved_at", "?"),
                 "preview": preview,
             })
-        except (json.JSONDecodeError, UnicodeDecodeError, KeyError):
-            continue
+        except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError, AttributeError):
+            continue  # skip stray non-session JSON files (arrays, null messages, ...)
 
     return sessions[:20]  # cap at 20
