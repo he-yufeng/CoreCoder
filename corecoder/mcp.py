@@ -1,11 +1,11 @@
-"""MCP stdio client, distilled to the slice of the protocol an agent uses.
+"""MCP tool clients for stdio servers and Streamable HTTP endpoints.
 
 Servers are configured in ~/.corecoder/mcp.json:
 
     {"mcpServers": {"fs": {"command": "npx", "args": ["-y", "some-fs-server", "/tmp"]}}}
 
-Each server is a subprocess speaking JSON-RPC 2.0, one message per line over
-stdin/stdout. Startup handshakes (`initialize`), pulls `tools/list`, and every
+Command entries spawn a subprocess speaking JSON-RPC 2.0 over stdin/stdout;
+URL entries use mcp_http. Startup handshakes (`initialize`), pulls `tools/list`, and every
 remote tool joins the agent as `mcp__<server>__<tool>`, so consent, hooks and
 the main loop treat them exactly like the built-ins. A server that hangs or
 dies fails that one call as an ordinary error string; it never kills the loop.
@@ -73,17 +73,20 @@ class MCPClient:
             self._dead = None  # a fresh process starts clean
             self._responses.clear()
         try:
-            self._request("initialize", {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "corecoder", "version": __version__},
-            }, INIT_TIMEOUT)
-            self._notify("notifications/initialized")
-            listed = self._request("tools/list", {}, INIT_TIMEOUT)
-            self.tools = [MCPTool(self, t) for t in listed.get("tools", [])]
+            self._initialize()
         except BaseException:
             self.close()  # a half-started server must not leak
             raise
+
+    def _initialize(self):
+        self._request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "corecoder", "version": __version__},
+        }, INIT_TIMEOUT)
+        self._notify("notifications/initialized")
+        listed = self._request("tools/list", {}, INIT_TIMEOUT)
+        self.tools = [MCPTool(self, t) for t in listed.get("tools", [])]
 
     @property
     def error(self) -> MCPError | None:
@@ -91,7 +94,7 @@ class MCPClient:
         return self._dead
 
     def reconnect(self):
-        """Start a fresh process for a dead or hung server and redo the
+        """Start a fresh connection for a dead or hung server and redo the
         handshake. The mcp__ tools the agent already holds route through this
         client, so they work again as soon as the handshake lands."""
         self.close()
@@ -222,7 +225,11 @@ def load_mcp_tools(path: Path = CONFIG_FILE) -> list[Tool]:
     tools: list[Tool] = []
     for name, spec in (data.get("mcpServers") or {}).items():
         try:
-            client = MCPClient(name, spec["command"], spec.get("args", []), spec.get("env"))
+            if "url" in spec:
+                from .mcp_http import HTTPMCPClient
+                client = HTTPMCPClient(name, spec["url"], spec.get("headers"))
+            else:
+                client = MCPClient(name, spec["command"], spec.get("args", []), spec.get("env"))
         except (MCPError, OSError, KeyError, TypeError) as e:
             log.warning("MCP server %r skipped: %s", name, e)
             continue
