@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**编程 agent 里的 nanoGPT。1.4k 行引擎、整包 2989 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
+**编程 agent 里的 nanoGPT。1.4k 行引擎、整包 3207 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
 
 *learn from it · fork it · ship something better*
 
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| 代码量 | 引擎约 1483 行 / 整包 2989 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
+| 代码量 | 引擎约 1483 行 / 整包 3207 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
 | 读完要多久 | 一个下午 | 读不了（闭源） | 得啃几天 | 一个下午 |
 | 能不能下断点改了再跑 | 能，每一行 | 不能 | 能，但量大 | 能 |
 | 定位 | 读懂并 fork 出你自己的 agent | 生产级编程助手 | 终端结对编程 | 教学用最小 GPT |
@@ -36,9 +36,9 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 我一直觉得 coding agent 被讲得太玄了。把 Claude Code、Cursor 这类工具扒到底，核心是一个 while 循环套着一个大模型，外加七八个让它能真正动手的工具。难的从来不是这个循环，而是循环跑进真实世界以后要兜的那些底。CoreCoder 就是把这个核心老老实实写出来的最小版本。
 
-引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1483 行。连最外层的 CLI、配置、打包一起算，整个包 25 个文件、物理 2989 行、净 2442 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
+引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1483 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3207 行、净 2639 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
 
-它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 246 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
+它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 311 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
 代码来自一次公开拆解。公开的源码分析里，Claude Code 这类生产级 agent 暴露出不少关键架构，我挑出最核心的一层，用尽量少的代码诚实地复写了一遍。所以读 CoreCoder，约等于读一份基于公开源码分析的「可运行注释版」：讲的是这类 agent 的核心思路，而它本身只是最小复写，就摆在你机器上，随你拆、随你改。
 
@@ -91,12 +91,13 @@ corecoder -p "给 parse_config() 加错误处理"   # 一次性模式，干完�
 corecoder/
 ├── agent.py        agent 主循环 + 并行工具执行       240 行   ← 从这里开始读
 ├── llm.py          流式客户端 + 重试 + 成本统计       364 行
-├── context.py      三层上下文压缩                     224 行
+├── context.py      三层上下文压缩                     220 行
 ├── session.py      会话存盘 / 续聊 + 路径穿越防护      97 行
 ├── permissions.py  改动类工具的用户授权                81 行
 ├── hooks.py        工具调用前后的用户 shell 钩子        87 行
 ├── shell.py        POSIX shell 路由（Windows 走 Git Bash） 61 行
-├── mcp.py          MCP stdio 客户端，接外部工具       237 行
+├── mcp.py          MCP 工具、握手和 stdio 连接         244 行
+├── mcp_http.py     远程 Streamable HTTP 连接           211 行
 ├── prompt.py       系统提示词                          41 行
 ├── cli.py          REPL + 斜杠命令 + 一次性模式        393 行
 ├── config.py       环境变量配置                        55 行
@@ -281,17 +282,22 @@ REPL 里 `/plan` 开关计划模式。开着的时候，提示符变成 `(plan)`
 
 ## MCP 服务器
 
-在 `~/.corecoder` 下放一个 `mcp.json`，任何 MCP 服务器的工具就能通过 stdio 接进 agent，配置形状和 Claude Code 的一样：
+在 `~/.corecoder` 下放一个 `mcp.json`。本地服务器填 `command`，远程 Streamable HTTP 服务器填 `url`，需要认证时再配请求头：
 
 ```json
 {
   "mcpServers": {
-    "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}
+    "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]},
+    "remote": {"url": "https://your-mcp-server.example/mcp", "headers": {"Authorization": "Bearer YOUR_MCP_TOKEN"}}
   }
 }
 ```
 
-每个配好的服务器在启动时拉起一个子进程，握手、列出工具；每件工具都注册成 `mcp__<服务器>__<工具>`，钩子匹配和授权闸对它和内建工具一视同仁。MCP 工具不在只读名单里，模型要调，得先问过你。握手给十五秒，一次调用给六十秒；服务器挂了或者迟迟不应，那一次调用就以普通工具结果的形式报错，循环照常往下走。REPL 里的 `/mcp` 列出每台服务器的状态，`/mcp reconnect <名字>` 把挂掉的重新拉起：新进程、重新握手，agent 手里已有的工具不用重启就恢复可用。客户端只实现协议里工具那一小片（initialize、tools/list、tools/call），别的一概不碰，所以整块实现收在 `mcp.py` 一个文件里，两百四十行上下。没有 `mcp.json` 就没有 MCP，一切照旧。想直接跑起来的话，[`examples/mcp_filesystem.md`](examples/mcp_filesystem.md) 给了一个最小配置：MCP 官方的参考文件系统服务器，只暴露一个目录，照样过授权闸。
+两种连接都会在启动时握手、列出工具。工具统一注册成 `mcp__<服务器>__<工具>`，走原有授权闸和钩子，远程工具不会被当成只读操作。`/mcp` 看服务器状态，`/mcp reconnect <名字>` 新建进程或 HTTP 会话，agent 手里已有的工具仍然可用。失败的调用不会自动重放，因为服务器可能已经执行过它。
+
+初始化请求的超时是十五秒，工具调用是六十秒。HTTP 支持 JSON 和 SSE 响应，携带协商后的协议版本与会话头，每个响应最多 4 MiB，读取正文时会检查剩余调用预算。DNS 和状态行、响应头解析仍遵循标准库的阻塞网络行为，不承诺严格的端到端截止时间。不实现旧式 SSE 地址发现、OAuth 登录、资源订阅或提示词 API。远程认证请用 HTTPS；客户端不跟随重定向。请求头按字面值使用，不会展开环境变量。
+
+握手和工具包装仍共用 `mcp.py`，`mcp_http.py` 只管 HTTP 传输。没有配置文件时一切照旧。可直接照着[本地文件系统示例](examples/mcp_filesystem.md)或[远程 HTTP 配置](examples/mcp_http.md)试。
 
 ## 相关项目
 
@@ -305,7 +311,7 @@ REPL 里 `/plan` 开关计划模式。开着的时候，提示符变成 `(plan)`
 
 ## 贡献 / License
 
-动手之前先跑一遍 `pytest tests/ -q`（240 个测试）、`ruff check` 和 `compileall`，绿了再提。MIT License，欢迎 fork 拿去造更好的东西，能在 README 里留一句出处就更好。
+动手之前先跑一遍 `pytest tests/ -q`、`ruff check corecoder tests` 和 `python -m compileall -q corecoder tests`，绿了再提。MIT License，欢迎 fork 拿去造更好的东西，能在 README 里留一句出处就更好。
 
 ---
 

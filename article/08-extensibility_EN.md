@@ -1,6 +1,6 @@
 # Three Ways to Extend Without Touching the Loop: MCP, Hooks, and Plan Mode
 
-By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (237 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
+By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (244 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
 
 ## MCP: cutting the protocol down to the slice an agent uses
 
@@ -12,7 +12,7 @@ Servers live in `~/.corecoder/mcp.json`:
 {"mcpServers": {"fs": {"command": "npx", "args": ["-y", "some-fs-server", "/tmp"]}}}
 ```
 
-Each server is a subprocess speaking JSON-RPC 2.0, one message per line over stdio. Startup sends `initialize`, then `tools/list` pulls the remote tools down, and each one is registered as `mcp__<server>__<tool>`. The rename does more than avoid collisions: article two established that a tool, inside the loop, is just a name, arguments, and a string result. A renamed remote tool takes the same registration path, so the consent layer, hooks, and the main loop treat it exactly like a built-in. Nothing downstream knows it came from outside.
+A `command` entry starts a subprocess speaking JSON-RPC 2.0, one message per line over stdio. Startup sends `initialize`, then `tools/list` pulls the remote tools down, and each one is registered as `mcp__<server>__<tool>`. The rename does more than avoid collisions: article two established that a tool, inside the loop, is just a name, arguments, and a string result. A renamed remote tool takes the same registration path, so the consent layer, hooks, and the main loop treat it exactly like a built-in. Nothing downstream knows it came from outside.
 
 The real engineering is two threading problems. First, tool calls run concurrently (article five), so when several threads call the same server, how do responses find their callers? A daemon thread owns stdout and parks every response in a `_responses` dict under its request id; the caller waits on its own id:
 
@@ -30,6 +30,8 @@ The most deliberate part is failure handling. What happens when a server hangs, 
 ```
 
 The failure surfaces as an ordinary error string from that one tool call. The model reads "this service is unavailable" and works around it; the main loop never even sees an exception. It is the same principle article three established for the model interface: the outside world can always break, and the loop must not break with it. And when a server does die, it stays down only until you ask otherwise: `/mcp` in the REPL lists every server with its state, and `/mcp reconnect <name>` spawns a fresh process and redoes the handshake. The tools the agent already holds route through the client, not the process, so they work again the moment the new handshake lands.
+
+For a remote service, replace `command` with `url` and optionally supply authentication `headers`. `mcp_http.py` owns only Streamable HTTP POSTs, JSON/SSE responses and session headers; initialization, tool wrappers, consent and `/mcp reconnect` reuse the existing path. Each HTTP request has its own connection and response id rather than sharing the stdio reader. Reconnect never replays a failed call, because losing a response does not prove the server did nothing. See the [HTTP setup](../examples/mcp_http.md).
 
 ## Hooks: allowed to veto, never allowed to kill
 
