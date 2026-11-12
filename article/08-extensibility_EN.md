@@ -1,10 +1,10 @@
 # Three Ways to Extend Without Touching the Loop: MCP, Hooks, and Plan Mode
 
-By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three wants are exactly the three additions in v0.6.0: `mcp.py` (244 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
+By the end of article seven you had a working agent. Almost immediately you will want three things: plug in new tools (a filesystem service, a database service), run your own logic around tool calls (a check before every bash run), and occasionally make the agent read-only (a plan before any work). Those three features first arrived in v0.6.0. In the current implementation they live in `mcp.py` (313 lines), `hooks.py` (87 lines), and one boolean in `agent.py` about fifty lines deep. What they share is that none of them touches the main loop from articles one through six. This piece is about why "not touching the loop" is not restraint but the precondition that makes all three possible.
 
 ## MCP: cutting the protocol down to the slice an agent uses
 
-The Model Context Protocol is the standard for calling external tool services from an agent. The full spec has lifecycle management, capability negotiation, resource subscriptions, prompt templates, and sampling callbacks. `mcp.py` keeps only the slice an agent actually exercises: spawn a process, handshake, ask what tools it has, call them, and shut it down at the end.
+The Model Context Protocol is the standard for calling external tool services from an agent. The full spec has lifecycle management, capability negotiation, resource subscriptions, prompt templates, and sampling callbacks. `mcp.py` keeps only the slice an agent actually exercises: connect, handshake, discover tools and text resources, call them on demand, and close the connection. A resource read is still wrapped as the same kind of tool call, with no new branch in the main loop.
 
 Servers live in `~/.corecoder/mcp.json`:
 
@@ -13,6 +13,8 @@ Servers live in `~/.corecoder/mcp.json`:
 ```
 
 A `command` entry starts a subprocess speaking JSON-RPC 2.0, one message per line over stdio. Startup sends `initialize`, then `tools/list` pulls the remote tools down, and each one is registered as `mcp__<server>__<tool>`. The rename does more than avoid collisions: article two established that a tool, inside the loop, is just a name, arguments, and a string result. A renamed remote tool takes the same registration path, so the consent layer, hooks, and the main loop treat it exactly like a built-in. Nothing downstream knows it came from outside.
+
+A server advertising `resources` adds one on-demand resource tool. It lists resources and URI templates and reads text, passing pagination cursors back unchanged rather than fetching the whole catalog or expanding it into the prompt. The URI stays with the configured server; the client does not open another file or connection for it. Binary contents and results over 32,768 characters fail explicitly. Consent, hooks and plan mode still apply.
 
 The real engineering is two threading problems. First, tool calls run concurrently (article five), so when several threads call the same server, how do responses find their callers? A daemon thread owns stdout and parks every response in a `_responses` dict under its request id; the caller waits on its own id:
 

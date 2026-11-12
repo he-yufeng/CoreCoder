@@ -1,4 +1,4 @@
-"""Tools-only MCP over Streamable HTTP; calls are never replayed automatically."""
+"""MCP over Streamable HTTP; calls are never replayed automatically."""
 
 import http.client
 import json
