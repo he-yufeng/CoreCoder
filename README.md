@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. A 1.4k-line engine inside 3,207 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. A 1.4k-line engine inside 3,276 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,483 engine / 3,207 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,483 engine / 3,276 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,9 +36,9 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,483 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,207 physical lines, 2,639 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
+The engine (loop, model interface, context, tools, sessions) is 1,483 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,276 physical lines, 2,703 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 311 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 353 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -96,7 +96,7 @@ corecoder/
 ├── permissions.py  consent for mutating tools              81 lines
 ├── hooks.py        Pre/PostToolUse shell hooks             87 lines
 ├── shell.py        POSIX shell routing (Git Bash on Windows) 61 lines
-├── mcp.py          MCP tools, handshake + stdio           244 lines
+├── mcp.py          MCP tools, text resources + stdio      313 lines
 ├── mcp_http.py     remote Streamable HTTP transport       211 lines
 ├── prompt.py       system prompt                           41 lines
 ├── cli.py          REPL + slash commands + one-shot       393 lines
@@ -209,7 +209,7 @@ Going deeper, the directions are out in the open too. None of the following is i
 - **The dangerous-command blocking in bash is just a regex blacklist.** It guards against slips, not a security sandbox. Facing untrusted input means reaching for seccomp or container isolation. This is the hardest of the four; it goes all the way down to the syscall and isolation layer.
 - **Retry is only exponential backoff.** No fallback model, no hard dollar budget. Follow `llm.py` down and add a fallback model chain plus a stop-on-over-budget gate; the change stays mostly inside that one file.
 - **Agent teams join before returning.** Named workers already run concurrently with isolated contexts; asynchronous background jobs, streaming progress and role-specific tool presets remain open extension points rather than another orchestration layer to add by default.
-- **No RAG, and the MCP client speaks tools only.** Retrieval-based code location for big repos is still open, and `mcp.py` leaves resources and prompts unimplemented on purpose. Either one is a real way to grow from a minimal core into your own stronger agent.
+- **No RAG, prompt API, or resource subscriptions.** MCP text references are fetched on demand; CoreCoder does not build a retrieval index or run a background synchronization loop. Retrieval-based code location for big repos is still open.
 
 The README only points; the seventh essay picks up the code details for each. Pick one and start; that's the whole reason the core is kept this small.
 
@@ -294,7 +294,19 @@ Drop a `mcp.json` under `~/.corecoder`. Local servers use `command`; remote Stre
 }
 ```
 
-Both transports handshake and list tools at startup. Every tool becomes `mcp__<server>__<tool>` and goes through the same consent gate and hooks; remote tools are never assumed read-only. `/mcp` shows server health, and `/mcp reconnect <name>` creates a fresh process or HTTP session without replacing the tool objects held by the agent. A failed call is not replayed automatically: the server may already have acted on it.
+Both transports handshake and discover server capabilities at startup. Remote tools become `mcp__<server>__<tool>` and go through the same consent gate and hooks; remote calls are never assumed read-only. `/mcp` shows server health, and `/mcp reconnect <name>` creates a fresh process or HTTP session without replacing the tool objects held by the agent. A failed call is not replayed automatically: the server may already have acted on it.
+
+A server advertising `resources` also adds one `mcp__<server>__resources` tool. It lists resources, discovers URI templates and reads text context without expanding the catalog into the prompt. Resource-only servers work without a `tools/list` implementation. If that tool name is already taken, the bridge appends underscores until it finds a free name, leaving remote tools unchanged.
+
+For a server named `remote`, the bridge accepts these argument objects. Use a URI returned by that server in place of the example `project://guide`:
+
+```json
+{"action": "list"}
+{"action": "templates"}
+{"action": "read", "uri": "project://guide"}
+```
+
+Pass a returned `nextCursor` unchanged as `cursor` to fetch another list or template page. The URI goes to the configured server, never to a local file reader or a separate HTTP fetch. Multiple text contents retain their URI and MIME metadata; binary resources and results over 32,768 characters fail explicitly instead of being silently omitted or truncated. Resource calls keep the existing permission, plan-mode and hook checks, so fetching a reference does not add an automatic read-only grant.
 
 Startup requests use fifteen-second timeouts and tool calls use sixty. HTTP accepts JSON or SSE replies, carries the negotiated protocol and session headers, caps each response at 4 MiB, and checks the remaining call budget between body reads. DNS and status/header parsing still use the standard library's blocking network behavior, not a hard end-to-end deadline. There is no legacy SSE endpoint discovery, OAuth flow, resource subscription or prompt API. Use HTTPS for remote credentials; redirects are not followed. Configured header values are literal strings, not environment-variable templates.
 
