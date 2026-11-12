@@ -317,6 +317,36 @@ def test_edit_file_rejects_non_utf8(tmp_path):
     assert "not a UTF-8 text file" in r
 
 
+def test_edit_file_keeps_crlf_line_endings(tmp_path):
+    """A CRLF file stays CRLF, and old_string matches typed with LF or CRLF."""
+    edit = get_tool("edit_file")
+    path = tmp_path / "win.txt"
+    path.write_bytes(b"one\r\ntwo\r\nthree\r\n")
+    r = edit.execute(file_path=str(path), old_string="one\ntwo", new_string="1\n2\n2b")
+    assert r.startswith("Edited")
+    assert path.read_bytes() == b"1\r\n2\r\n2b\r\nthree\r\n"
+    r = edit.execute(file_path=str(path), old_string="2b\r\nthree", new_string="3")
+    assert r.startswith("Edited")
+    assert path.read_bytes() == b"1\r\n2\r\n3\r\n"
+
+
+def test_edit_file_keeps_lf_line_endings(tmp_path):
+    """An LF file stays LF even where the platform default is CRLF."""
+    edit = get_tool("edit_file")
+    path = tmp_path / "unix.txt"
+    path.write_bytes(b"a\nb\nc\n")
+    edit.execute(file_path=str(path), old_string="b", new_string="B\nB2")
+    assert path.read_bytes() == b"a\nB\nB2\nc\n"
+
+
+def test_edit_file_one_line_edit_leaves_mixed_endings_alone(tmp_path):
+    edit = get_tool("edit_file")
+    path = tmp_path / "mixed.txt"
+    path.write_bytes(b"a\r\nb\nc\r\n")
+    edit.execute(file_path=str(path), old_string="b", new_string="B")
+    assert path.read_bytes() == b"a\r\nB\nc\r\n"
+
+
 # --- glob ---
 
 def test_glob_finds_files():

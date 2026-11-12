@@ -7,6 +7,7 @@ and makes edits safe and reviewable.
 """
 
 import difflib
+import os
 from pathlib import Path
 from typing import ClassVar
 
@@ -53,9 +54,19 @@ class EditFileTool(Tool):
                     return f"Error: {file_path} not found"
 
                 try:
-                    content = p.read_text(encoding="utf-8")
+                    # newline="" reads the file's own line endings, untranslated
+                    with p.open(encoding="utf-8", newline="") as f:
+                        raw = f.read()
                 except UnicodeDecodeError:
                     return f"Error: {file_path} is not a UTF-8 text file (edit_file only edits text files)"
+                # match on LF text, as read_file shows it, then write back the
+                # file's most common line ending instead of the platform's
+                crlf = raw.count("\r\n")
+                counts = {"\n": raw.count("\n") - crlf, "\r\n": crlf, "\r": raw.count("\r") - crlf}
+                eol = max(counts, key=counts.get) if any(counts.values()) else os.linesep
+                content = raw.replace("\r\n", "\n").replace("\r", "\n")
+                old_string = old_string.replace("\r\n", "\n")
+                new_string = new_string.replace("\r\n", "\n")
                 occurrences = content.count(old_string)
 
                 if occurrences == 0:
@@ -71,8 +82,13 @@ class EditFileTool(Tool):
                     )
 
                 new_content = content.replace(old_string, new_string, 1)
+                if "\n" in old_string + new_string:
+                    out = new_content.replace("\n", eol)
+                else:  # one-line edit: every other byte stays as it was
+                    out = raw.replace(old_string, new_string, 1)
                 _record_checkpoint(p)
-                p.write_text(new_content, encoding="utf-8")
+                with p.open("w", encoding="utf-8", newline="") as f:
+                    f.write(out)
                 _changed_files.add(str(p))
 
             # generate a unified diff so the user/LLM can see exactly what changed
