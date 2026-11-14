@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. A 1.4k-line engine inside 3,276 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. A 1.5k-line engine inside 3,312 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1483_LoC-blue)](article/00-index_EN.md)
+[![engine](https://img.shields.io/badge/engine-1487_LoC-blue)](article/00-index_EN.md)
 [![essays](https://img.shields.io/badge/source--reading-8_bilingual-orange)](article/00-index_EN.md)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,483 engine / 3,276 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,487 engine / 3,312 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,9 +36,9 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,483 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,276 physical lines, 2,703 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
+The engine (loop, model interface, context, tools, sessions) is 1,487 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,312 physical lines, 2,734 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 353 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 357 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -101,15 +101,15 @@ corecoder/
 ├── prompt.py       system prompt                           41 lines
 ├── cli.py          REPL + slash commands + one-shot       393 lines
 ├── config.py       env-var config                          55 lines
-├── checkpoints.py  /undo snapshot and restore               93 lines
+├── checkpoints.py  /undo snapshot and restore              125 lines
 ├── demo.py         offline end-to-end demo                 101 lines
 └── tools/
     ├── bash.py       shell + dangerous-command gate + cd  203 lines
-    ├── edit.py       unique-match search/replace + diff    99 lines
+    ├── edit.py       unique-match search/replace + diff   101 lines
     ├── grep.py       content search                        93 lines
     ├── glob_tool.py  filename matching                     52 lines
     ├── read.py       file read                             56 lines
-    ├── write.py      file write                            46 lines
+    ├── write.py      file write                            48 lines
     ├── todo.py       agent-maintained task checklist       79 lines
     ├── agent.py      sub-agent teams + isolation         224 lines
     └── base.py       tool base class                       32 lines
@@ -229,7 +229,7 @@ Inside the REPL, `/help` lists everything; these are the ones you'll reach for:
 quit / exit      exit (Ctrl+C cancels the current round)
 ```
 
-Session IDs are sanitized to safe characters before they become filenames, every archive lands under `~/.corecoder/sessions`, and a malicious session name can't traverse out. Undo history persists the same way: checkpoints land in `~/.corecoder/checkpoints.json`, so `/undo` still reaches back after a restart. The cost estimate behind `/tokens` reads a built-in price table, and `~/.corecoder/pricing.json` overrides any entry in it, so a new model or a moved price lands without waiting for a release.
+Session IDs are sanitized to safe characters before they become filenames, every archive lands under `~/.corecoder/sessions`, and a malicious session name can't traverse out. Undo history persists the same way: checkpoints land in `~/.corecoder/checkpoints.json`, so `/undo` still reaches back after a restart. Each checkpoint also records the bytes the edit produced; if the file changed again by hand or through bash, `/undo` keeps the newer work and the checkpoint instead of overwriting it. The cost estimate behind `/tokens` reads a built-in price table, and `~/.corecoder/pricing.json` overrides any entry in it, so a new model or a moved price lands without waiting for a release.
 
 ## Permissions
 
