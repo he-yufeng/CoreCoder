@@ -25,5 +25,10 @@ jobs:
           python -m build
           python -m twine check dist/*
 
+      - name: Verify installed wheel
+        run: |
+          python -m pip install dist/*.whl pytest
+          python -I tests/check_installed_wheel.py dist/*.whl
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
