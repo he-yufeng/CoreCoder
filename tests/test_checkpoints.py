@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import json
+
 from corecoder import checkpoints
 from corecoder.tools.edit import EditFileTool
 from corecoder.tools.write import WriteFileTool
@@ -103,3 +106,59 @@ def test_corrupt_stack_file_means_nothing_to_undo(tmp_path):
     _simulate_restart()
     assert checkpoints.pending() == 0
     assert checkpoints.undo() == "Nothing to undo."
+
+
+def test_undo_keeps_later_manual_edits(tmp_path):
+    f = tmp_path / "a.py"
+    f.write_text("v1\n", encoding="utf-8")
+    EditFileTool().execute(str(f), "v1", "v2")
+    f.write_text("keep my manual work\n", encoding="utf-8")
+
+    result = checkpoints.undo()
+
+    assert "changed after the edit" in result
+    assert f.read_text() == "keep my manual work\n"
+    assert checkpoints.pending() == 1
+
+
+def test_undo_keeps_a_file_replaced_after_creation(tmp_path):
+    f = tmp_path / "new.py"
+    WriteFileTool().execute(str(f), "agent\n")
+    f.write_text("manual\n", encoding="utf-8")
+
+    result = checkpoints.undo()
+
+    assert "changed after the edit" in result
+    assert f.read_text() == "manual\n"
+    assert checkpoints.pending() == 1
+
+
+def test_conflicted_undo_keeps_the_checkpoint_until_resolved(tmp_path):
+    first = tmp_path / "first.py"
+    latest = tmp_path / "latest.py"
+    first.write_text("old\n", encoding="utf-8")
+    EditFileTool().execute(str(first), "old", "agent")
+    WriteFileTool().execute(str(latest), "agent\n")
+    latest.write_text("manual\n", encoding="utf-8")
+
+    assert "changed after the edit" in checkpoints.undo()
+    assert checkpoints.pending() == 2
+    latest.unlink()
+    assert checkpoints.undo() == f"Removed {latest} (created this session)."
+    assert checkpoints.undo() == f"Restored {first}."
+    assert first.read_text() == "old\n"
+    assert checkpoints.pending() == 0
+
+
+def test_legacy_checkpoint_still_restores(tmp_path):
+    f = tmp_path / "a.py"
+    f.write_text("v1\n", encoding="utf-8")
+    checkpoints.CHECKPOINTS_FILE.write_text(
+        json.dumps([{"path": str(f), "prior": base64.b64encode(b"v1\n").decode()}]),
+        encoding="utf-8",
+    )
+    f.write_text("v2\n", encoding="utf-8")
+
+    _simulate_restart()
+    assert checkpoints.undo() == f"Restored {f}."
+    assert f.read_text() == "v1\n"
