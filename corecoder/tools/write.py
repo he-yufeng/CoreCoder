@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from ..checkpoints import record as _record_checkpoint
+from ..checkpoints import wrote as _record_write
 from .base import Tool
 from .edit import _changed_files
 
@@ -38,6 +39,7 @@ class WriteFileTool(Tool):
                 p.parent.mkdir(parents=True, exist_ok=True)
                 _record_checkpoint(p)
                 p.write_text(content, encoding="utf-8")
+                _record_write(p, p.read_bytes())
                 _changed_files.add(str(p))
             n_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
             return f"Wrote {n_lines} lines to {file_path}"

@@ -115,6 +115,29 @@ class ContextManager:
             split -= 1
         return split
 
+    _SUMMARY_MARKER = "[Context compressed - conversation summary]"
+    _COLLAPSE_MARKER = "[Hard context reset]"
+
+    @classmethod
+    def _split_prior_summary(cls, messages: list[dict]) -> tuple[str, list[dict]]:
+        """Separate a summary this manager wrote from the turns after it.
+
+        Re-summarizing a summary loses detail a little at a time: after a few
+        compressions an early fact is gone even though every step looked
+        reasonable. Carry the earlier summary forward verbatim and summarize
+        only the turns that arrived since.
+        """
+        if len(messages) >= 2 and messages[0].get("role") == "user":
+            head = messages[0].get("content") or ""
+            for marker in (cls._SUMMARY_MARKER, cls._COLLAPSE_MARKER):
+                if head.startswith(marker):
+                    prior = head[len(marker):].lstrip("\n")
+                    rest = messages[1:]
+                    if rest and rest[0].get("role") == "assistant":
+                        rest = rest[1:]
+                    return prior, rest
+        return "", messages
+
     def _summarize_old(self, messages: list[dict], llm: LLM | None,
                        keep_recent: int = 8) -> bool:
         """Layer 2: Summarize old conversation, keep recent messages intact."""
@@ -125,12 +148,17 @@ class ContextManager:
         old = messages[:split]
         tail = messages[split:]
 
-        summary = self._get_summary(old, llm)
+        prior, fresh = self._split_prior_summary(old)
+        if prior and not fresh:
+            return False
+        summary = self._get_summary(fresh, llm)
+        if prior:
+            summary = f"{prior}\n{summary}"
 
         messages.clear()
         messages.append({
             "role": "user",
-            "content": f"[Context compressed - conversation summary]\n{summary}",
+            "content": f"{self._SUMMARY_MARKER}\n{summary}",
         })
         messages.append({
             "role": "assistant",
@@ -143,12 +171,15 @@ class ContextManager:
         """Layer 3: Emergency compression. Keep only last 4 messages + summary."""
         split = self._safe_split(messages, 4 if len(messages) > 4 else 2)
         tail = messages[split:]
-        summary = self._get_summary(messages[:split], llm)
+        prior, fresh = self._split_prior_summary(messages[:split])
+        summary = self._get_summary(fresh, llm) if fresh else ""
+        if prior:
+            summary = f"{prior}\n{summary}" if summary else prior
 
         messages.clear()
         messages.append({
             "role": "user",
-            "content": f"[Hard context reset]\n{summary}",
+            "content": f"{self._COLLAPSE_MARKER}\n{summary}",
         })
         messages.append({
             "role": "assistant",

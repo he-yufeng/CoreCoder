@@ -9,13 +9,24 @@ effects are not tracked, only the two file-writing tools.
 
 import base64
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 CHECKPOINTS_FILE = Path.home() / ".corecoder" / "checkpoints.json"
 
-# (path, prior bytes or None if the file did not exist)
-_stack: list[tuple[str, bytes | None]] = []
+@dataclass
+class _Checkpoint:
+    path: str
+    prior: bytes | None
+    after: bytes | None = None
+
+
+_stack: list[_Checkpoint] = []
 _loaded = False
+
+
+def _encode(data: bytes | None) -> str | None:
+    return base64.b64encode(data).decode("ascii") if data is not None else None
 
 
 def _ensure_loaded() -> None:
@@ -27,7 +38,12 @@ def _ensure_loaded() -> None:
         entries = json.loads(CHECKPOINTS_FILE.read_text(encoding="utf-8"))
         for e in entries:
             prior = e["prior"]
-            _stack.append((e["path"], base64.b64decode(prior) if prior is not None else None))
+            after = e.get("after")
+            _stack.append(_Checkpoint(
+                e["path"],
+                base64.b64decode(prior) if prior is not None else None,
+                base64.b64decode(after) if after is not None else None,
+            ))
     except (OSError, ValueError, KeyError, TypeError):
         # a missing or corrupt stack just means nothing to undo
         pass
@@ -35,8 +51,8 @@ def _ensure_loaded() -> None:
 
 def _save() -> None:
     entries = [
-        {"path": path, "prior": base64.b64encode(prior).decode("ascii") if prior is not None else None}
-        for path, prior in _stack
+        {"path": c.path, "prior": _encode(c.prior), "after": _encode(c.after)}
+        for c in _stack
     ]
     try:
         CHECKPOINTS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -51,8 +67,16 @@ def _save() -> None:
 def record(path: Path) -> None:
     """Capture the pre-mutation state of path. Call right before writing."""
     _ensure_loaded()
-    _stack.append((str(path), path.read_bytes() if path.exists() else None))
+    _stack.append(_Checkpoint(str(path), path.read_bytes() if path.exists() else None))
     _save()
+
+
+def wrote(path: Path, content: bytes) -> None:
+    """Record the bytes produced by the mutation that followed record()."""
+    _ensure_loaded()
+    if _stack and _stack[-1].path == str(path) and _stack[-1].after is None:
+        _stack[-1].after = content
+        _save()
 
 
 def undo() -> str:
@@ -60,8 +84,16 @@ def undo() -> str:
     _ensure_loaded()
     if not _stack:
         return "Nothing to undo."
-    path_str, prior = _stack.pop()
+    checkpoint = _stack[-1]
+    path_str, prior = checkpoint.path, checkpoint.prior
     p = Path(path_str)
+    current = p.read_bytes() if p.exists() else None
+    if checkpoint.after is not None and p.exists() and current != checkpoint.after:
+        return (
+            f"Skipped {path_str}: the file changed after the edit. "
+            "The checkpoint was kept; review the file before undoing it."
+        )
+    _stack.pop()
     if prior is None:
         p.unlink(missing_ok=True)
         msg = f"Removed {path_str} (created this session)."
