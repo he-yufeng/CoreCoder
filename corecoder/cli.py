@@ -37,12 +37,28 @@ def _parse_args():
     p.add_argument("--yes", action="store_true", help="Auto-approve every tool call (for scripts and CI)")
     p.add_argument("--demo", action="store_true", help="Run the offline scripted demo (no API key needed)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
+    p.add_argument("--list-sessions", action="store_true", help="List saved sessions offline")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.list_sessions and (args.demo or args.prompt is not None or args.resume is not None):
+        p.error("--list-sessions cannot be combined with --demo, --prompt or --resume")
+    return args
+
+
+def _show_sessions():
+    sessions = list_sessions()
+    if not sessions:
+        console.print("[dim]No saved sessions.[/dim]")
+    for s in sessions:
+        console.print(f"  {s['id']} ({s['model']}, {s['saved_at']}) {s['preview']}", markup=False)
 
 
 def main():
     args = _parse_args()
+
+    if args.list_sessions:
+        _show_sessions()
+        return
 
     if args.demo:
         from .demo import run_demo
@@ -285,12 +301,7 @@ def _repl(agent: Agent, config: Config):
                 console.print(f"[dim]{left} more checkpoint(s) on the stack.[/dim]")
             continue
         if user_input == "/sessions":
-            sessions = list_sessions()
-            if not sessions:
-                console.print("[dim]No saved sessions.[/dim]")
-            else:
-                for s in sessions:
-                    console.print(f"  [cyan]{s['id']}[/cyan] ({s['model']}, {s['saved_at']}) {s['preview']}")
+            _show_sessions()
             continue
         if user_input == "/mcp" or user_input.startswith("/mcp "):
             _mcp(user_input[4:].strip())

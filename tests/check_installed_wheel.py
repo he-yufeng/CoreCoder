@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,21 @@ def main():
         assert cli, "installed console entry point is missing"
         help_result = subprocess.run([cli, "--help"], cwd=work, capture_output=True, text=True, check=True)
         assert "corecoder" in help_result.stdout.lower()
+        env = os.environ.copy()
+        for key in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY", "CORECODER_API_KEY", "PYTHONPATH"):
+            env.pop(key, None)
+        env.update(HOME=work, USERPROFILE=work)
+        sessions = Path(work) / ".corecoder" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "wheel-session.json").write_text(json.dumps({
+            "id": "wheel-session",
+            "model": "fixture-model",
+            "saved_at": "2026-01-01 12:00:00",
+            "messages": [{"role": "user", "content": "saved before the restart"}],
+        }), encoding="utf-8")
+        catalog = subprocess.run([cli, "--list-sessions"], cwd=work, env=env,
+                                 capture_output=True, text=True, check=True)
+        assert "wheel-session" in catalog.stdout and "saved before the restart" in " ".join(catalog.stdout.split())
         # The package is already imported from site-packages; this path is only for test fixtures.
         sys.path.insert(0, str(checkout))
         import pytest
@@ -46,7 +62,8 @@ def main():
         assert all(path.is_relative_to(package) for path in loaded.values()), loaded
     print(json.dumps({"version": corecoder.__version__, "wheelSha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
                       "packageRoot": str(package), "matchingPythonFiles": len(sources),
-                      "consoleExit": help_result.returncode, "resourceTestsExit": result}, indent=2))
+                      "consoleExit": help_result.returncode, "sessionCatalogExit": catalog.returncode,
+                      "resourceTestsExit": result}, indent=2))
     raise SystemExit(result)
 
 
