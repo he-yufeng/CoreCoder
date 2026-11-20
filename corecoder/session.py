@@ -64,6 +64,8 @@ def load_session(session_id: str) -> tuple[list[dict], str] | None:
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
         return data["messages"], data["model"]
     except (json.JSONDecodeError, UnicodeDecodeError, KeyError, OSError):
         # a corrupt or truncated session file shouldn't crash resume
@@ -79,6 +81,8 @@ def list_sessions() -> list[dict]:
     for f in sorted(SESSIONS_DIR.glob("*.json"), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                continue
             # grab first user message as preview
             preview = ""
             for m in data.get("messages", []):

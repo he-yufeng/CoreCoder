@@ -36,6 +36,20 @@ def test_list_sessions_offline(isolated_sessions, monkeypatch, capsys):
     assert path.read_bytes() == before
 
 
+def test_list_sessions_skips_non_object_record(isolated_sessions, monkeypatch, capsys):
+    sid = session.save_session([{"role": "user", "content": "keep this"}], "m")
+    unreadable = isolated_sessions / "zz_not_a_session.json"
+    unreadable.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions"])
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert sid in output
+    assert "zz_not_a_session" not in output
+    assert unreadable.read_text(encoding="utf-8") == "[]"
+
+
 def test_list_sessions_empty_is_read_only(isolated_sessions, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions"])
 
