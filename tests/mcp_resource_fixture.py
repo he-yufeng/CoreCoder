@@ -19,18 +19,34 @@ class ResourceServer:
             capabilities = {"resources": False if self.mode == "invalid-resources" else {}}
             if self.mode != "resources-only":
                 capabilities["tools"] = {}
-            result = {"protocolVersion": "2025-06-18", "capabilities": capabilities,
-                      "serverInfo": {"name": "references", "version": "1"}}
-        elif method == "tools/list" and self.mode != "resources-only":
-            names = ["echo", "resources", "resources_"] if self.mode == "collision" else ["echo"]
-            result = {"tools": [{"name": name, "inputSchema": {"type": "object", "properties": {}}}
-                                for name in names]}
+            if self.mode in {"prompts-only", "prompts", "collision-prompts"}:
+                capabilities["prompts"] = {}
+            if self.mode == "invalid-prompts":
+                capabilities["prompts"] = False
+            if self.mode == "prompts-only":
+                capabilities.pop("tools", None)
+                capabilities.pop("resources", None)
+            result = {
+                "protocolVersion": "2025-06-18",
+                "capabilities": capabilities,
+                "serverInfo": {"name": "references", "version": "1"},
+            }
+        elif method == "tools/list" and self.mode not in {"resources-only", "prompts-only"}:
+            if self.mode == "collision":
+                names = ["echo", "resources", "resources_"]
+            elif self.mode == "collision-prompts":
+                names = ["prompts", "prompts_"]
+            else:
+                names = ["echo"]
+            result = {"tools": [{"name": name, "inputSchema": {"type": "object", "properties": {}}} for name in names]}
         elif method == "tools/call":
             result = {"content": [{"type": "text", "text": "remote tool: " + params["name"]}]}
         elif method == "resources/list":
             if "cursor" not in params:
-                result = {"resources": [{"name": "guide", "uri": "docs://guide", "title": "Team guide"}],
-                          "nextCursor": " page:2 "}
+                result = {
+                    "resources": [{"name": "guide", "uri": "docs://guide", "title": "Team guide"}],
+                    "nextCursor": " page:2 ",
+                }
             elif params["cursor"] == " page:2 ":
                 result = {"resources": [{"name": "more", "uri": "docs://more"}]}
             elif params["cursor"] == "":
@@ -54,8 +70,42 @@ class ResourceServer:
             elif uri == "docs://oversize":
                 result = {"contents": [{"uri": uri, "text": "x" * 40000}]}
             else:
-                result = {"contents": [{"uri": uri, "mimeType": "text/plain", "text": "server-owned: " + uri},
-                                       {"uri": uri + "#note", "text": "项目上下文"}]}
+                result = {
+                    "contents": [
+                        {"uri": uri, "mimeType": "text/plain", "text": "server-owned: " + uri},
+                        {"uri": uri + "#note", "text": "项目上下文"},
+                    ]
+                }
+        elif method == "prompts/list":
+            if "cursor" not in params:
+                result = {
+                    "prompts": [
+                        {"name": "code_review", "description": "Review code", "arguments": [{"name": "code", "required": True}]}
+                    ],
+                    "nextCursor": " prompt:2 ",
+                }
+            elif params["cursor"] == " prompt:2 ":
+                result = {"prompts": [{"name": "release_notes"}]}
+            elif params["cursor"] == "":
+                result = {"prompts": [{"name": "empty cursor"}]}
+            else:
+                return self.error(request, -32602, "Invalid cursor")
+        elif method == "prompts/get":
+            name = params["name"]
+            if name == "missing":
+                return self.error(request, -32602, "Prompt not found")
+            if name == "bad_content":
+                result = {"messages": [{"role": "user", "content": {"type": "image", "data": "AA=="}}]}
+            elif name == "oversize":
+                result = {"messages": [{"role": "user", "content": {"type": "text", "text": "x" * 40000}}]}
+            elif name == "broken":
+                result = {"messages": "not an array"}
+            else:
+                code = params.get("arguments", {}).get("code", "")
+                result = {
+                    "description": "Review code",
+                    "messages": [{"role": "user", "content": {"type": "text", "text": "Review:\n" + code}}],
+                }
         else:
             return self.error(request, -32601, "No such method: " + method)
         result["_meta"] = {"method": method, "params": params}
