@@ -1,3 +1,5 @@
+import pytest
+
 from corecoder import session as session_module
 from corecoder.session import load_session, save_session
 
@@ -62,6 +64,16 @@ def test_corrupt_session_file_returns_none(tmp_path, monkeypatch):
     (tmp_path / "broken.json").write_text("{ not valid json", encoding="utf-8")
 
     assert load_session("broken") is None
+
+
+@pytest.mark.parametrize("record", ["[]", "null", "42", '\"hello\"'])
+def test_non_object_session_file_returns_none(tmp_path, monkeypatch, record):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    fixture = tmp_path / "not_a_session.json"
+    fixture.write_text(record, encoding="utf-8")
+
+    assert load_session("not_a_session") is None
+    assert fixture.read_text(encoding="utf-8") == record
 
 
 def test_session_roundtrips_unicode(tmp_path, monkeypatch):
