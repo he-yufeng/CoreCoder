@@ -39,14 +39,25 @@ def server(request):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
+            if method == "notifications/cancelled":
+                self.send_response(202)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             mode = settings["mode"] if method == "tools/call" else "normal"
             if method == "initialize":
+                if settings.get("initialize_stall"):
+                    time.sleep(0.3)
                 result = {"protocolVersion": settings["version"], "capabilities": {"tools": {}}}
             elif method == "tools/list":
                 result = {"tools": [{"name": "echo", "description": "Echo text", "inputSchema": {"type": "object"}}]}
             else:
                 result = {"content": [{"type": "text", "text": request["params"]["arguments"]["text"]}]}
             if mode == "late_error":
+                entered, release = settings["gate"]
+                entered.set()
+                release.wait(5)
+            if mode == "stall":
                 entered, release = settings["gate"]
                 entered.set()
                 release.wait(5)
@@ -223,6 +234,54 @@ def test_trickling_body_does_not_extend_call_budget(server, tmp_path):
     with pytest.raises(mcp.MCPError):
         tool.execute(text="slow")
     assert time.monotonic() - started < 1
+
+
+def test_timeout_cancels_without_replaying_the_tool_call(server, tmp_path):
+    tool, = load(server, tmp_path)
+    tool._client.call_timeout = 0.15
+    entered, release = threading.Event(), threading.Event()
+    server[3].update(mode="stall", gate=(entered, release))
+    with pytest.raises(mcp.MCPError):
+        tool.execute(text="slow")
+    release.set()
+
+    methods = [request["method"] for request, _ in server[1]]
+    assert methods.count("tools/call") == 1
+    assert methods.count("notifications/cancelled") == 1
+    call = next(request for request, _ in server[1] if request["method"] == "tools/call")
+    cancelled = next(request for request, _ in server[1] if request["method"] == "notifications/cancelled")
+    assert cancelled["params"]["requestId"] == call["id"]
+    assert "tools/call timed out" in cancelled["params"]["reason"]
+
+    server[3]["mode"] = "normal"
+    tool._client.reconnect()
+    assert tool.execute(text="healthy") == "healthy"
+
+
+def test_http_initialize_timeout_is_never_cancelled(server, tmp_path, monkeypatch):
+    server[3]["initialize_stall"] = True
+    monkeypatch.setattr(mcp, "INIT_TIMEOUT", 0.05)
+    assert load(server, tmp_path) == []
+    assert all(request["method"] != "notifications/cancelled" for request, _ in server[1])
+
+
+def test_connect_timeout_does_not_cancel_an_unsent_request(server, tmp_path):
+    tool, = load(server, tmp_path)
+    client = tool._client
+
+    class UnsentConnection:
+        def request(self, *args, **kwargs):
+            raise TimeoutError
+
+        def close(self):
+            pass
+
+    client._connection = lambda timeout: (UnsentConnection(), "/unused")
+    notifications = []
+    client._notify = lambda *args: notifications.append(args)
+    with pytest.raises(mcp.MCPError):
+        tool.execute(text="unsent")
+    assert notifications == []
 
 
 def test_old_failure_cannot_poison_reconnected_client(server, tmp_path, capsys):

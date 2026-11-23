@@ -7,6 +7,9 @@ these tests need no shell and run the same on Windows.
 import json
 import logging
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -43,9 +46,14 @@ for line in sys.stdin:
     except json.JSONDecodeError:
         continue
     if "id" not in req:
+        if req.get("method") == "notifications/cancelled" and os.environ.get("CANCEL_LOG"):
+            with open(os.environ["CANCEL_LOG"], "a", encoding="utf-8") as log:
+                log.write(json.dumps({**(req.get("params") or {}), "pid": os.getpid()}) + "\\n")
         continue  # notification, nothing to answer
     method, params = req.get("method"), req.get("params") or {}
     if method == "initialize":
+        if os.environ.get("INITIALIZE_DELAY"):
+            time.sleep(float(os.environ["INITIALIZE_DELAY"]))
         result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
                   "serverInfo": {"name": "fake", "version": "0.1"}}
     elif method == "tools/list":
@@ -56,7 +64,10 @@ for line in sys.stdin:
         if name == "crash":
             os._exit(1)
         if name == "stall":
-            time.sleep(30)
+            if os.environ.get("STALL_LOG"):
+                with open(os.environ["STALL_LOG"], "a", encoding="utf-8") as log:
+                    log.write(str(req["id"]) + "\\n")
+            time.sleep(0.5)
         content = [{"type": "text", "text": "echo: " + args["text"] if name == "echo" else "bad input near 42"}]
         result = {"content": content, "isError": name == "fail"}
     else:
@@ -78,7 +89,9 @@ def server_script(tmp_path):
 def mcp_config(tmp_path, server_script):
     cfg = tmp_path / "mcp.json"
     cfg.write_text(json.dumps({"mcpServers": {"fake": {
-        "command": sys.executable, "args": [str(server_script)]}}}), encoding="utf-8")
+        "command": sys.executable, "args": [str(server_script)],
+        "env": {"CANCEL_LOG": str(tmp_path / "cancelled.jsonl"),
+                "STALL_LOG": str(tmp_path / "stalled.jsonl")}}}}), encoding="utf-8")
     return cfg
 
 
@@ -151,6 +164,98 @@ def test_a_slow_server_times_out_the_call(mcp_config):
     stall._client.call_timeout = 0.2
     with pytest.raises(MCPError, match="no answer"):
         stall.execute()
+
+
+def test_timeout_cancels_the_request_and_ignores_its_late_reply(mcp_config):
+    tools = load_mcp_tools(mcp_config)
+    stall = next(t for t in tools if t.name == "mcp__fake__stall")
+    echo = next(t for t in tools if t.name == "mcp__fake__echo")
+    client = stall._client
+    client.call_timeout = 0.2
+    request_id = client._next_id + 1
+
+    with pytest.raises(MCPError, match="no answer"):
+        stall.execute()
+    time.sleep(0.6)
+    assert echo.execute(text="after") == "echo: after"
+
+    cancelled = [
+        json.loads(line)
+        for line in (mcp_config.parent / "cancelled.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(cancelled) == 1
+    assert cancelled[0]["requestId"] == request_id
+    assert "tools/call timed out" in cancelled[0]["reason"]
+    assert client._pending == set()
+    assert client._responses == {}
+
+
+def test_reconnect_does_not_send_an_old_timeout_to_the_new_process(mcp_config, monkeypatch):
+    old_reader_at_eof = threading.Event()
+    release_old_reader = threading.Event()
+    real_popen = mcp.subprocess.Popen
+
+    class GatedStdout:
+        def __init__(self, stream):
+            self._stream = stream
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            try:
+                return next(self._stream)
+            except StopIteration:
+                old_reader_at_eof.set()
+                assert release_old_reader.wait(3)
+                raise
+
+    def popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        proc.stdout = GatedStdout(proc.stdout)
+        return proc
+
+    monkeypatch.setattr(mcp.subprocess, "Popen", popen)
+    tools = load_mcp_tools(mcp_config)
+    stall = next(t for t in tools if t.name == "mcp__fake__stall")
+    echo = next(t for t in tools if t.name == "mcp__fake__echo")
+    client = stall._client
+    client.call_timeout = 1
+    stalled = mcp_config.parent / "stalled.jsonl"
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            old = pool.submit(stall.execute)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and (not stalled.exists() or not stalled.read_text().strip()):
+                time.sleep(0.01)
+            assert stalled.exists() and stalled.read_text().strip()
+
+            client.reconnect()
+            assert old_reader_at_eof.wait(1)
+            new_pid = client._proc.pid
+            assert echo.execute(text="new") == "echo: new"
+            with pytest.raises(MCPError, match="no answer"):
+                old.result(timeout=3)
+    finally:
+        release_old_reader.set()
+
+    cancelled_path = mcp_config.parent / "cancelled.jsonl"
+    cancelled = [json.loads(line) for line in cancelled_path.read_text().splitlines()] if cancelled_path.exists() else []
+    assert all(record["pid"] != new_pid for record in cancelled)
+
+
+def test_initialize_timeout_is_never_cancelled(server_script, tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp, "INIT_TIMEOUT", 0.05)
+    cancelled = tmp_path / "cancelled.jsonl"
+    with pytest.raises(MCPError, match="no answer"):
+        mcp.MCPClient(
+            "fake",
+            sys.executable,
+            [str(server_script)],
+            {"CANCEL_LOG": str(cancelled), "INITIALIZE_DELAY": "0.2"},
+        )
+    assert not cancelled.exists()
 
 
 def test_a_tool_level_error_surfaces_its_message(mcp_config):

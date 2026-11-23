@@ -1,11 +1,11 @@
-"""MCP over Streamable HTTP; calls are never replayed automatically."""
+"""MCP over Streamable HTTP; calls are never replayed and timeouts are cancelled."""
 
 import http.client
 import json
 import time
 from urllib.parse import urlsplit
 
-from .mcp import INIT_TIMEOUT, PROTOCOL_VERSION, MCPClient, MCPError, log
+from .mcp import CANCEL_TIMEOUT, INIT_TIMEOUT, PROTOCOL_VERSION, MCPClient, MCPError, log
 
 _RESPONSE_LIMIT = 4 * 1024 * 1024
 _RESERVED_HEADERS = {"accept", "content-type", "mcp-session-id", "mcp-protocol-version"}
@@ -68,10 +68,10 @@ class HTTPMCPClient(MCPClient):
                     self._protocol_version = version
         return result
 
-    def _notify(self, method: str):
+    def _notify(self, method: str, params: dict | None = None, timeout: float = INIT_TIMEOUT):
         with self._cond:
             generation = self._generation
-        self._post({"jsonrpc": "2.0", "method": method, "params": {}}, INIT_TIMEOUT, generation)
+        self._post({"jsonrpc": "2.0", "method": method, "params": params or {}}, timeout, generation)
 
     def _http_headers(self):
         headers = {**self._headers, "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
@@ -97,8 +97,10 @@ class HTTPMCPClient(MCPClient):
             headers = self._http_headers()
         conn, path = self._connection(timeout)
         deadline = time.monotonic() + timeout
+        request_sent = False
         try:
             conn.request("POST", path, body=json.dumps(msg).encode("utf-8"), headers=headers)
+            request_sent = True
             with conn.getresponse() as response:
                 if "id" not in msg and response.status == 202:
                     return {}
@@ -123,6 +125,22 @@ class HTTPMCPClient(MCPClient):
                         return reply
                 raise MCPError("MCP HTTP response ended without a matching reply")
         except (MCPError, OSError, ValueError, http.client.HTTPException) as e:
+            timed_out = isinstance(e, TimeoutError) or (
+                isinstance(e, MCPError) and ("timed out" in str(e) or "TimeoutError" in str(e))
+            )
+            with self._cond:
+                can_cancel = generation is self._generation
+            if timed_out and request_sent and can_cancel and "id" in msg and msg["method"] != "initialize":
+                reason = f"{msg['method']} timed out after {timeout:g}s"
+                log.debug("MCP request %s on %r cancelled: %s", msg["id"], self.name, reason)
+                try:
+                    self._notify(
+                        "notifications/cancelled",
+                        {"requestId": msg["id"], "reason": reason},
+                        CANCEL_TIMEOUT,
+                    )
+                except (MCPError, OSError, ValueError, http.client.HTTPException) as cancel_error:
+                    log.debug("MCP cancellation on %r was not accepted: %s", self.name, cancel_error)
             failure = e if isinstance(e, MCPError) else MCPError(f"MCP HTTP transport failed ({type(e).__name__})")
             with self._cond:
                 if generation is self._generation:
