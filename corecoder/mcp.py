@@ -8,7 +8,7 @@ Command entries spawn a subprocess speaking JSON-RPC 2.0 over stdin/stdout;
 URL entries use mcp_http. Startup discovers tools and optional resource or prompt support.
 Remote tools and on-demand resource/prompt bridges join as `mcp__<server>__...`,
 sharing consent, hooks and the main loop. A server that hangs or dies fails
-that one call as an ordinary error string; it never kills the loop.
+that one call; non-initialize timeouts are cancelled and late replies ignored.
 The REPL's /mcp shows each server's state and reconnects a dead one by hand.
 """
 
@@ -30,6 +30,7 @@ CONFIG_FILE = Path.home() / ".corecoder" / "mcp.json"
 PROTOCOL_VERSION = "2025-06-18"
 INIT_TIMEOUT = 15  # seconds for initialize + tools/list at startup
 CALL_TIMEOUT = 60  # seconds for one tools/call
+CANCEL_TIMEOUT = 2  # seconds for a best-effort cancellation notification
 _RESOURCE_RESULT_LIMIT = 32_768  # characters returned to the agent per resource request
 
 
@@ -54,6 +55,7 @@ class MCPClient:
         self._next_id = 0
         self._dead: MCPError | None = None
         self._responses: dict[int, dict] = {}
+        self._pending: set[int] = set()
         self._cond = threading.Condition()
         self._write_lock = threading.Lock()
         self._start()
@@ -73,6 +75,7 @@ class MCPClient:
         with self._cond:
             self._dead = None  # a fresh process starts clean
             self._responses.clear()
+            self._pending.clear()
         try:
             self._initialize()
         except BaseException:
@@ -146,9 +149,9 @@ class MCPClient:
         except subprocess.TimeoutExpired:
             self._proc.kill()
 
-    def _notify(self, method: str):
+    def _notify(self, method: str, params: dict | None = None, proc: subprocess.Popen | None = None):
         try:
-            self._write({"jsonrpc": "2.0", "method": method, "params": {}})
+            self._write({"jsonrpc": "2.0", "method": method, "params": params or {}}, proc=proc)
         except MCPError:
             pass  # a notification has no reply to lose; the next request meets the dead server
 
@@ -158,27 +161,45 @@ class MCPClient:
                 raise self._dead
             self._next_id += 1
             req_id = self._next_id
-        self._write({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
-        deadline = time.monotonic() + timeout
-        with self._cond:
-            while req_id not in self._responses:
-                if self._dead is not None:
-                    raise self._dead
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    raise MCPError(f"MCP server {self.name!r} gave no answer to {method} in {timeout:g}s")
-                self._cond.wait(left)
-            msg = self._responses.pop(req_id)
+            proc = self._proc
+            self._pending.add(req_id)
+        timed_out = False
+        try:
+            self._write({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+            deadline = time.monotonic() + timeout
+            with self._cond:
+                while req_id not in self._responses:
+                    if self._dead is not None:
+                        raise self._dead
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        self._pending.discard(req_id)
+                        self._responses.pop(req_id, None)
+                        timed_out = True
+                        break
+                    self._cond.wait(left)
+                msg = self._responses.pop(req_id, None)
+        finally:
+            with self._cond:
+                self._pending.discard(req_id)
+                self._responses.pop(req_id, None)
+        if timed_out:
+            if method != "initialize":
+                reason = f"{method} timed out after {timeout:g}s"
+                log.debug("MCP request %s on %r cancelled: %s", req_id, self.name, reason)
+                self._notify("notifications/cancelled", {"requestId": req_id, "reason": reason}, proc=proc)
+            raise MCPError(f"MCP server {self.name!r} gave no answer to {method} in {timeout:g}s")
         if "error" in msg:
             raise MCPError(f"MCP server {self.name!r} rejected {method}: {msg['error'].get('message', msg['error'])}")
         return msg.get("result", {})
 
-    def _write(self, msg: dict):
+    def _write(self, msg: dict, proc: subprocess.Popen | None = None):
+        target = self._proc if proc is None else proc
         try:
             with self._write_lock:
-                self._proc.stdin.write(json.dumps(msg) + "\n")
-                self._proc.stdin.flush()
-        except OSError as e:
+                target.stdin.write(json.dumps(msg) + "\n")
+                target.stdin.flush()
+        except (OSError, ValueError) as e:
             raise MCPError(f"MCP server {self.name!r} is not writable: {e}") from e
 
     def _read_loop(self, proc: subprocess.Popen):
@@ -192,6 +213,8 @@ class MCPClient:
                 if "id" not in msg:
                     continue  # server notification: nothing here needs an answer
                 with self._cond:
+                    if msg["id"] not in self._pending:
+                        continue  # a timed-out or already completed request has no waiter
                     self._responses[msg["id"]] = msg
                     self._cond.notify_all()
         except (OSError, ValueError):
