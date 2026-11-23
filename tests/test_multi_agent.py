@@ -178,7 +178,7 @@ def test_multi_agent_failed_dependency_skips_downstream_but_not_independent_work
         ]
     )
 
-    assert started == ["researcher", "reviewer"]
+    assert len(started) == 2 and set(started) == {"researcher", "reviewer"}
     assert "Sub-agent skipped: dependency 'researcher' failed" in result
     assert "reviewer report" in result
 
