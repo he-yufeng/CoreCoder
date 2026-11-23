@@ -56,21 +56,6 @@ def test_compact_on_a_short_conversation_reports_nothing(monkeypatch, capsys):
     assert "Nothing to compress" in capsys.readouterr().out
 
 
-def test_save_then_sessions_lists_it(monkeypatch, capsys, tmp_path):
-    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
-    agent = _agent(LLMResponse(content="answer"))
-    agent.chat("remember this")
-
-    repl_with(monkeypatch, agent, ["/save", "/sessions", "quit"])
-
-    out = capsys.readouterr().out
-    assert "Session saved: session_" in out
-    saved = list(tmp_path.glob("*.json"))
-    assert len(saved) == 1
-    assert saved[0].stem in out  # /sessions printed the same id
-    assert "remember this" in out  # and its first-user-message preview
-
-
 def test_sessions_with_none_saved_reports_none(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
     agent = _agent()

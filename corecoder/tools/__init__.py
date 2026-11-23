@@ -2,6 +2,7 @@
 
 from .agent import AgentTool
 from .bash import BashTool
+from .current_time import CurrentTimeTool
 from .edit import EditFileTool
 from .glob_tool import GlobTool
 from .grep import GrepTool
@@ -11,6 +12,7 @@ from .write import WriteFileTool
 
 ALL_TOOLS = [
     BashTool(),
+    CurrentTimeTool(),
     ReadFileTool(),
     WriteFileTool(),
     EditFileTool(),

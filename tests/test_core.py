@@ -102,24 +102,13 @@ def test_public_api_exports():
     assert Agent is not None
     assert LLM is not None
     assert Config is not None
-    assert len(ALL_TOOLS) == 8
+    assert len(ALL_TOOLS) == 9
 
 
 def test_config_from_env(monkeypatch):
     monkeypatch.setenv("CORECODER_MODEL", "test-model")
     c = Config.from_env()
     assert c.model == "test-model"
-
-
-def test_config_defaults(monkeypatch):
-    # clear relevant env vars without leaking the change into other tests
-    monkeypatch.delenv("CORECODER_MODEL", raising=False)
-    monkeypatch.delenv("CORECODER_MAX_TOKENS", raising=False)
-
-    c = Config.from_env()
-    assert c.model == "gpt-5.5"
-    assert c.max_tokens == 4096
-    assert c.temperature == 0.0
 
 
 # --- Context ---

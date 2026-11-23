@@ -8,7 +8,26 @@ from tests.conftest import get_tool
 
 
 def test_tool_count():
-    assert len(ALL_TOOLS) == 8
+    assert len(ALL_TOOLS) == 9
+
+
+def test_current_time(monkeypatch):
+    from datetime import datetime, timezone
+    from unittest.mock import Mock
+
+    clock = Mock(wraps=datetime)
+    clock.now.return_value = datetime(2026, 7, 1, 0, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr("corecoder.tools.current_time.datetime", clock)
+    tool = get_tool("get_current_time")
+    assert tool.execute() == "Asia/Shanghai → 2026-07-01 08:30:00 +08:00"
+
+    clock.now.reset_mock()
+    assert tool.execute(["Europe/Londn", "America/New_York", "Asia/Kathmandu"]).splitlines() == [
+        "'Europe/Londn': invalid or unknown time zone",
+        "America/New_York → 2026-06-30 20:30:00 -04:00",
+        "Asia/Kathmandu → 2026-07-01 06:15:00 +05:45",
+    ]
+    clock.now.assert_called_once_with(timezone.utc)
 
 
 def test_all_tools_have_valid_schema():
