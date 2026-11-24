@@ -128,26 +128,61 @@ class LLM:
         model: str,
         api_key: str,
         base_url: str | None = None,
+        fallback_models: list[str] | tuple[str, ...] | None = None,
+        on_fallback=None,
         **kwargs,
     ):
         self.model = model
         self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.fallback_models = tuple(dict.fromkeys(m.strip() for m in fallback_models or () if m.strip()))
+        self.on_fallback = on_fallback
         self.extra = kwargs  # temperature, max_tokens, etc.
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self._usage_by_model: dict[str, list[int]] = {}
         self._usage_lock = threading.Lock()
 
     @property
     def estimated_cost(self) -> float | None:
-        """Rough cost estimate in USD. Returns None if the model has no known price."""
-        pricing = _load_pricing().get(self.model)
-        if not pricing:
-            return None
-        input_rate, output_rate = pricing
-        return (
-            self.total_prompt_tokens * input_rate / 1_000_000
-            + self.total_completion_tokens * output_rate / 1_000_000
-        )
+        """Rough cost estimate in USD, using the model that served each call."""
+        usage = getattr(self, "_usage_by_model", None)
+        if usage is not None:
+            with self._usage_lock:
+                model_usage = [(model, *counts) for model, counts in usage.items()]
+                if not model_usage:
+                    model_usage = [(self.model, self.total_prompt_tokens, self.total_completion_tokens)]
+        else:
+            # Keep lightweight LLM.__new__ embedders and older pickled objects valid.
+            model_usage = [(self.model, self.total_prompt_tokens, self.total_completion_tokens)]
+        pricing = _load_pricing()
+        cost = 0.0
+        for model, prompt_tokens, completion_tokens in model_usage:
+            if not prompt_tokens and not completion_tokens:
+                continue
+            rates = pricing.get(model)
+            if rates is None:
+                return None
+            input_rate, output_rate = rates
+            cost += prompt_tokens * input_rate / 1_000_000 + completion_tokens * output_rate / 1_000_000
+        return cost
+
+    @staticmethod
+    def _is_transient_error(exc: Exception) -> bool:
+        if isinstance(exc, (RateLimitError, APITimeoutError, APIConnectionError)):
+            return True
+        return isinstance(exc, APIError) and (getattr(exc, "status_code", None) or 0) >= 500
+
+    def _create_stream(self, params: dict):
+        """Create one stream, adapting only parameters the provider names in a 400."""
+        while True:
+            try:
+                return self._call_with_retry(params)
+            except BadRequestError as e:
+                if _adapt_rejected_param(params, e):
+                    continue
+                if "stream_options" not in params:
+                    raise
+                params.pop("stream_options")
 
     def chat(
         self,
@@ -163,55 +198,52 @@ class LLM:
         DeepSeek/Kimi reasoning_content is kept on tool-call turns because
         their thinking protocols require it in the following request.
         """
-        params: dict = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-            **self.extra,
-        }
-        if tools:
-            params["tools"] = tools
-
-        # Provider-dialect fallbacks. A 400 that names a parameter is adapted
-        # (newer OpenAI models take max_completion_tokens, default temperature
-        # only); a 400 that names nothing drops stream_options once, matching
-        # the previous single-fallback behavior for servers that reject the
-        # OpenAI extension silently. The loop is bounded by the param set, and
-        # an unrecognized 400 re-raises instead of doubling _call_with_retry's
-        # exhausted retries. LiteLLM never lands here: drop_params strips
-        # unsupported keys on that path.
-        params["stream_options"] = {"include_usage": True}
+        models = (self.model, *(m for m in self.fallback_models if m != self.model))
         last_err = None
-        for attempt in range(3):
-            while True:
-                try:
-                    stream = self._call_with_retry(params)
-                    break
-                except BadRequestError as e:
-                    if _adapt_rejected_param(params, e):
-                        continue
-                    if "stream_options" not in params:
-                        raise
-                    params.pop("stream_options")
+        for model_index, model in enumerate(models):
+            params: dict = {
+                "model": model,
+                "messages": messages,
+                "stream": True,
+                **self.extra,
+                "stream_options": {"include_usage": True},
+            }
+            if tools:
+                params["tools"] = tools
+
             try:
-                return self._drain(stream, on_token, on_reasoning)
-            except (RateLimitError, APITimeoutError, APIConnectionError) as e:
-                last_err = e
-            except APIError as e:
-                # retry 5xx mid-stream drops but not 4xx
-                status_code = getattr(e, "status_code", None)
-                if not status_code or status_code < 500:
-                    raise
-                last_err = e
-            # The stream died partway through. Nothing has been executed yet,
-            # so re-issuing the whole request is safe; whatever partial text
-            # on_token already showed is simply regenerated. Create-time
-            # transients stay inside _call_with_retry and do not land here.
-            if attempt < 2:
-                time.sleep(2**attempt)
+                stream = self._create_stream(params)
+            except Exception as e:
+                # Fallback is only for a request that never started streaming.
+                # A 400 or an exhausted mid-stream retry must not be hidden by
+                # replaying already visible output through another model.
+                if model_index + 1 < len(models) and self._is_transient_error(e):
+                    last_err = e
+                    continue
+                raise
+
+            if model_index and getattr(self, "on_fallback", None):
+                self.on_fallback(model)
+            for attempt in range(3):
+                try:
+                    return self._drain(stream, on_token, on_reasoning, model=model)
+                except (RateLimitError, APITimeoutError, APIConnectionError) as e:
+                    last_err = e
+                except APIError as e:
+                    # retry 5xx mid-stream drops but not 4xx
+                    status_code = getattr(e, "status_code", None)
+                    if not status_code or status_code < 500:
+                        raise
+                    last_err = e
+                # Nothing has been executed yet, so re-issuing this same model's
+                # request is safe. Create-time retries stay in _call_with_retry.
+                if attempt < 2:
+                    time.sleep(2**attempt)
+                    stream = self._create_stream(params)
+            raise last_err
         raise last_err
 
-    def _drain(self, stream, on_token, on_reasoning) -> LLMResponse:
+    def _drain(self, stream, on_token, on_reasoning, model: str | None = None) -> LLMResponse:
         """Consume one stream into an LLMResponse."""
         content_parts: list[str] = []
         reasoning_parts: list[str] | None = None
@@ -279,6 +311,10 @@ class LLM:
         with self._usage_lock:
             self.total_prompt_tokens += prompt_tok
             self.total_completion_tokens += completion_tok
+            if hasattr(self, "_usage_by_model"):
+                usage = self._usage_by_model.setdefault(model or self.model, [0, 0])
+                usage[0] += prompt_tok
+                usage[1] += completion_tok
 
         return LLMResponse(
             content="".join(content_parts),
@@ -327,16 +363,29 @@ class LiteLLM(LLM):
         model: str,
         api_key: str | None = None,
         base_url: str | None = None,
+        fallback_models: list[str] | tuple[str, ...] | None = None,
+        on_fallback=None,
         **kwargs,
     ):
         # skip LLM.__init__ which creates an OpenAI client
         self.model = model
         self.api_key = api_key
         self.base_url = base_url
+        self.fallback_models = tuple(dict.fromkeys(m.strip() for m in fallback_models or () if m.strip()))
+        self.on_fallback = on_fallback
         self.extra = kwargs
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self._usage_by_model: dict[str, list[int]] = {}
         self._usage_lock = threading.Lock()
+
+    @staticmethod
+    def _is_transient_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(
+            keyword in message
+            for keyword in ["rate_limit", "timeout", "connection", "500", "502", "503", "504", "529"]
+        )
 
     def _call_with_retry(self, params: dict, max_retries: int = 3):
         """Retry on transient errors with exponential backoff via litellm."""
@@ -352,13 +401,7 @@ class LiteLLM(LLM):
             try:
                 return litellm.completion(**params)
             except Exception as e:
-                err = str(e).lower()
-                is_transient = any(
-                    kw in err
-                    for kw in ["rate_limit", "timeout", "connection", "502", "503", "529"]
-                )
-                is_server = any(kw in err for kw in ["500", "502", "503", "504"])
-                if (is_transient or is_server) and attempt < max_retries - 1:
+                if self._is_transient_error(e) and attempt < max_retries - 1:
                     time.sleep(2 ** attempt)
                 else:
                     raise

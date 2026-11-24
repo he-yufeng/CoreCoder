@@ -196,6 +196,24 @@ class TestChat:
         call_kwargs = self.fake.completion.call_args[1]
         assert call_kwargs["stream_options"] == {"include_usage": True}
 
+    def test_create_time_transient_uses_fallback_model(self):
+        llm = LiteLLM(model="openai/gpt-4o", fallback_models=["anthropic/claude-3-haiku"])
+        self.fake.completion.side_effect = [
+            RuntimeError("connection unavailable"),
+            RuntimeError("connection unavailable"),
+            RuntimeError("connection unavailable"),
+            _make_stream(["fallback"]),
+        ]
+
+        with mock.patch("corecoder.llm.time.sleep"):
+            result = llm.chat(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "fallback"
+        assert [call.kwargs["model"] for call in self.fake.completion.call_args_list] == [
+            "openai/gpt-4o", "openai/gpt-4o", "openai/gpt-4o", "anthropic/claude-3-haiku",
+        ]
+        assert "fallback_models" not in llm.extra
+
 
 # ---------------------------------------------------------------------------
 # Config integration

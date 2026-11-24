@@ -2,7 +2,7 @@
 
 前两篇讲的是循环和工具，也就是 agent 的手脚。这一篇讲大脑接口：模型怎么接进来，流式输出怎么处理，provider 抽风了怎么扛，以及一个被很多教程跳过、但你上线后第一天就会关心的问题，这一轮到底花了多少钱。
 
-对应的文件是 `corecoder/llm.py`，364 行，是引擎里最大的单文件。它大，是因为它替你扛下了和真实 API 打交道时所有不优雅的部分。
+对应的文件是 `corecoder/llm.py`，407 行，是引擎里最大的单文件。它大，是因为它替你扛下了和真实 API 打交道时所有不优雅的部分。
 
 ## 一个赌注：大家都长得像 OpenAI
 
@@ -112,7 +112,7 @@ def _call_with_retry(self, params: dict, max_retries: int = 3):
 
 这段重试逻辑值得专门点出来，因为「这么小的项目应该没空管重试吧」是个很自然的误会，而事实正相反。重试不但在，还考虑得相当周到，连基类 `APIError` 可能没有 `status_code` 属性都用 `getattr` 防住了（不同版本的 SDK 异常层级不一样，硬取属性会炸）。
 
-CoreCoder 没做的，是 Claude Code 那种更重的优雅降级：服务端持续 529 时自动切换到一个备用模型（fallbackModel），以及按美元数的预算上限。这两样它确实没做，但原因不是疏忽，而是取舍。fallback 模型涉及「哪个模型能替哪个」这种跨 provider 难以统一的策略，美元预算又得维护一张随时在变的价目表。CoreCoder 把能干净实现的（退避重试）做了，把会引入大量 provider 专属逻辑的（fallback、硬预算）留给了你按需去加。知道「它做了什么」和「它故意没做什么」，比笼统说一句「它很简陋」有用得多。
+CoreCoder 也提供显式配置的 fallback 链。设了 `CORECODER_FALLBACK_MODELS=gpt-5.4-mini,deepseek-chat` 之后，主模型在建连阶段的瞬时故障重试耗尽，才把同一个请求交给下一个模型。400 仍然是请求错误，不能拿 fallback 掩盖错误配置；已经开始返回内容的流只在原模型上重试，不会换模型重放。CLI 会在 stderr 标明实际启用的备用模型，嵌入方也可以用可选的 `on_fallback` 回调。美元硬预算仍然是扩展点。这条链只增加故障韧性，不替你猜跨 provider 的模型替代策略。
 
 还有个容易被忽略的协调细节。`stream_options` 是 OpenAI 的扩展，有些 provider 不认，会回一个 400。CoreCoder 的处理是：
 
@@ -160,19 +160,18 @@ _PRICING = {
 
 这张表只是默认值。`_load_pricing()` 会用 `~/.corecoder/pricing.json`（同样的形状）覆盖它，新模型、调价都不用等发版；文件不存在或者写坏了，就静默落回内置表。
 
-`estimated_cost` 这个 property 拿累计 token 乘上对应单价：
+`estimated_cost` 这个 property 按实际提供服务的模型分别累计 token，再乘各自单价。启用 fallback 后，备用模型的响应不会错按主模型价格收费：
 
 ```python
-@property
-def estimated_cost(self) -> float | None:
-    pricing = _load_pricing().get(self.model)
-    if not pricing:
+pricing = _load_pricing()
+cost = 0.0
+for model, (prompt_tokens, completion_tokens) in self._usage_by_model.items():
+    if model not in pricing:
         return None
-    input_rate, output_rate = pricing
-    return (
-        self.total_prompt_tokens * input_rate / 1_000_000
-        + self.total_completion_tokens * output_rate / 1_000_000
-    )
+    input_rate, output_rate = pricing[model]
+    cost += prompt_tokens * input_rate / 1_000_000
+    cost += completion_tokens * output_rate / 1_000_000
+return cost
 ```
 
 注意返回类型是 `float | None`。表里没有的模型，它不瞎猜，老老实实返回 `None`，CLI 那边看到 `None` 就不显示价格，而不是编一个数字骗你。这是个小但重要的诚实：宁可说「我不知道」，也不给你一个看着精确、实则瞎编的成本。CLI 的 `/tokens` 命令把它显示出来：
@@ -185,7 +184,7 @@ Tokens: 12043 prompt + 3201 completion = 15244 total  (~$0.0621)
 
 ## 配置从哪来
 
-最后串一下 `config.py`（55 行）。它从环境变量读配置，带一个合理的优先级：
+最后串一下 `config.py`（61 行）。它从环境变量读配置，带一个合理的优先级：
 
 ```python
 api_key = (
@@ -203,7 +202,7 @@ api_key = (
 - 「大多数 provider 都兼容 OpenAI 接口」这个赌注，让整个 provider 层薄到只是 openai SDK 的一层包装，换 provider 就是换两个环境变量。
 - 流式输出里，工具调用的参数是分片到达的，得按 index 累加再 `json.loads`，还要对坏数据优雅降级。
 - 重试该放在 provider 层，不该塞进主循环。指数退避只重试瞬时故障和 5xx，绝不重试 4xx。
-- CoreCoder 做了退避重试，故意没做 fallback 模型和美元硬预算，因为后两者会拖进大量 provider 专属逻辑。分清「没做」和「故意没做」。
+- CoreCoder 把指数退避和可选 fallback 链放在一起，但只在流开始前切模型。美元硬预算仍是扩展点。
 - 成本估算宁可对未知模型返回 `None`，也不编一个假精确的数字。诚实比好看重要。
 
 下一篇，我们面对 agent 最硬的那道物理约束：上下文窗口就这么大，一个长任务怎么塞得下。

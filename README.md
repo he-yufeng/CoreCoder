@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. A 1.5k-line engine inside 3,492 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. A 1.5k-line engine inside 3,543 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1532_LoC-blue)](article/00-index_EN.md)
+[![engine](https://img.shields.io/badge/engine-1577_LoC-blue)](article/00-index_EN.md)
 [![essays](https://img.shields.io/badge/source--reading-8_bilingual-orange)](article/00-index_EN.md)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,532 engine / 3,492 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,577 engine / 3,543 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,9 +36,9 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,532 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,492 physical lines, 2,900 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
+The engine (loop, model interface, context, tools, sessions) is 1,577 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,543 physical lines, 2,953 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
 
-And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 422 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
+And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 428 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
 The code came out of a public teardown: open analyses have already exposed a lot of the load-bearing architecture inside production agents like Claude Code. I took the most essential layer and rewrote it honestly, in as little code as I could. So reading CoreCoder is roughly like reading a runnable, annotated take on how that kind of agent works, except it's only a minimal reimplementation, sitting right there on your machine for you to take apart and change.
 
@@ -74,6 +74,8 @@ Give it a model and a key and it goes. It speaks the OpenAI-compatible API by de
 
 On a 400 that names `temperature`, CoreCoder retries without it so the provider can apply its supported default. This includes Kimi's unquoted rejection; no `CORECODER_TEMPERATURE` override is needed.
 
+For a provider-side outage, set an ordered fallback chain such as `CORECODER_FALLBACK_MODELS=gpt-5.4-mini,deepseek-chat`. Models after the first must use the same configured provider; LiteLLM accepts its usual cross-provider model strings. CoreCoder switches only after create-time transient retries are exhausted. It never hides a 400 by switching models, and never replays a stream that already started through another model. The CLI names the selected fallback on stderr. Token cost is charged against the model that actually served each response.
+
 Kimi, Qwen and the like are the same two variables; for providers that don't even offer an OpenAI-compatible endpoint, the optional LiteLLM backend (`pip install "corecoder[litellm]"`) routes to a hundred-plus of them. The third essay goes into this in detail. Thinking models are first-class too: deepseek-reasoner, kimi-k3 and friends stream their chain-of-thought, and CoreCoder shows it dimmed as it works. Plain answers keep reasoning out of the conversation history, while Kimi and DeepSeek tool-call turns carry `reasoning_content` into the next request as their thinking protocols require. The key can be `export`ed directly or dropped into a `.env` at the project root, which is loaded on startup. Then:
 
 Smoke-tested end to end (read the file, edit it, run it, report back) against DeepSeek, Qwen3 and Kimi K2 via a single OpenRouter-compatible endpoint; each completed the full loop. One note for one-shot scripts: `-p` refuses mutating tools unless you pass `--yes`, by design.
@@ -90,7 +92,7 @@ Laid out flat, the whole project is this big. Skim it before you clone and you'l
 ```
 corecoder/
 ├── agent.py        agent loop + parallel tool exec       240 lines   ← start here
-├── llm.py          streaming client + retry + cost        364 lines
+├── llm.py          streaming client + retry + cost        407 lines
 ├── context.py      three-tier context compaction          251 lines
 ├── session.py      save / resume + path-traversal guard   101 lines
 ├── permissions.py  consent for mutating tools              81 lines
@@ -99,8 +101,8 @@ corecoder/
 ├── mcp.py          MCP tools, resources, prompt templates  413 lines
 ├── mcp_http.py     remote Streamable HTTP transport       229 lines
 ├── prompt.py       system prompt                           41 lines
-├── cli.py          REPL + slash commands + one-shot       404 lines
-├── config.py       env-var config                          55 lines
+├── cli.py          REPL + slash commands + one-shot       406 lines
+├── config.py       env-var config                          61 lines
 ├── checkpoints.py  /undo snapshot and restore              125 lines
 ├── demo.py         offline end-to-end demo                 101 lines
 └── tools/
@@ -192,7 +194,7 @@ I also wrote a bilingual source-reading series, one intro plus eight parts, each
 
 Once you understand it, the natural next step is to fork. Getting started doesn't take much:
 
-- **Swap in a model you actually use.** It's the two env vars from above; `llm.py` (364 lines) is the entry point for all provider adaptation.
+- **Swap in a model you actually use.** It's the two env vars from above; `llm.py` (407 lines) is the entry point for all provider adaptation.
 - **Add a tool of your own.** Write a new file against the tool base class in `tools/base.py` (32 lines): run tests, fetch a page, call an LSP, whatever. The end of the second essay walks you through your first one by hand.
 - **Rewrite the system prompt.** `prompt.py` is all of 41 lines; change one line and you'll watch the agent's temperament shift. It's the cheapest "change one thing, see a result" in the whole project.
 - **Import it as a library.** The top level exports `Agent`, `LLM`, and `Config`, ready to embed in your own program:
@@ -207,7 +209,7 @@ print(Agent(llm=llm).chat("find every TODO comment in this project and list them
 Going deeper, the directions are out in the open too. None of the following is in CoreCoder, by design, not because it's unfinished. Flip it around and each one is an entry point you can carry into a real tool of your own:
 
 - **The dangerous-command blocking in bash is just a regex blacklist.** It guards against slips, not a security sandbox. Facing untrusted input means reaching for seccomp or container isolation. This is the hardest of the four; it goes all the way down to the syscall and isolation layer.
-- **Retry is only exponential backoff.** No fallback model, no hard dollar budget. Follow `llm.py` down and add a fallback model chain plus a stop-on-over-budget gate; the change stays mostly inside that one file.
+- **Retry and opt-in fallback stay in the provider layer.** There is still no hard dollar budget. Follow `llm.py` down and add a stop-on-over-budget gate without moving policy into the agent loop.
 - **Agent teams join before returning.** Named workers already run concurrently with isolated contexts; asynchronous background jobs, streaming progress and role-specific tool presets remain open extension points rather than another orchestration layer to add by default.
 - **No RAG or resource subscriptions.** MCP text references and prompt templates are fetched on demand; CoreCoder does not build a retrieval index or run a background synchronization loop. Retrieval-based code location for big repos is still open.
 
