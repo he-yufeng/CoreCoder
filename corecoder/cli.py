@@ -97,6 +97,8 @@ def main():
         base_url=config.base_url,
         temperature=config.temperature,
         max_tokens=config.max_tokens,
+        fallback_models=config.fallback_models,
+        on_fallback=lambda model: err_console.print(f"[dim]Using fallback model: {model}[/dim]"),
     )
     # consent layer: ask in the REPL, refuse in one-shot mode, --yes skips it
     if args.yes:

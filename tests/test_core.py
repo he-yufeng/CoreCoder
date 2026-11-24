@@ -1035,3 +1035,123 @@ class TestMidStreamRetry:
         with mock.patch("corecoder.llm.time.sleep"), pytest.raises(APIConnectionError):
             llm.chat(messages=[{"role": "user", "content": "hi"}])
         assert create.call_count == 3
+
+
+class TestModelFallback:
+    def test_create_time_transient_uses_fallback_and_its_price(self):
+        selected = []
+        llm = LLM(
+            model="gpt-4o",
+            api_key="sk-test",
+            fallback_models=["gpt-4o-mini"],
+            on_fallback=selected.append,
+        )
+        llm.client = mock.Mock()
+        create = llm.client.chat.completions.create
+        create.side_effect = [
+            TestMidStreamRetry._connection_error(),
+            TestMidStreamRetry._connection_error(),
+            TestMidStreamRetry._connection_error(),
+            self._good_stream(),
+        ]
+
+        with mock.patch("corecoder.llm.time.sleep"):
+            result = llm.chat(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "full"
+        assert selected == ["gpt-4o-mini"]
+        assert [call.kwargs["model"] for call in create.call_args_list] == [
+            "gpt-4o", "gpt-4o", "gpt-4o", "gpt-4o-mini",
+        ]
+        assert "fallback_models" not in llm.extra
+        assert "on_fallback" not in llm.extra
+        assert llm.estimated_cost == pytest.approx((7 * 0.15 + 2 * 0.6) / 1_000_000)
+
+    @staticmethod
+    def _good_stream():
+        from types import SimpleNamespace
+
+        return iter([SimpleNamespace(
+            usage=SimpleNamespace(prompt_tokens=7, completion_tokens=2),
+            choices=[SimpleNamespace(delta=SimpleNamespace(
+                content="full", tool_calls=None, reasoning_content=None))],
+        )])
+
+    def test_request_error_does_not_try_fallback(self):
+        llm = LLM(model="gpt-4o", api_key="sk-test", fallback_models=["gpt-4o-mini"])
+        llm.client = mock.Mock()
+        create = llm.client.chat.completions.create
+        create.side_effect = [
+            TestLLMParamFallback._bad_request("unknown request field"),
+            TestLLMParamFallback._bad_request("unknown request field"),
+        ]
+
+        with pytest.raises(BadRequestError):
+            llm.chat(messages=[{"role": "user", "content": "hi"}])
+
+        assert [call.kwargs["model"] for call in create.call_args_list] == ["gpt-4o", "gpt-4o"]
+
+    def test_midstream_exhaustion_does_not_replay_on_another_model(self):
+        llm = LLM(model="gpt-4o", api_key="sk-test", fallback_models=["gpt-4o-mini"])
+        llm.client = mock.Mock()
+        create = llm.client.chat.completions.create
+        create.side_effect = [
+            _DyingStream(TestMidStreamRetry._connection_error()),
+            _DyingStream(TestMidStreamRetry._connection_error()),
+            _DyingStream(TestMidStreamRetry._connection_error()),
+        ]
+
+        from openai import APIConnectionError
+
+        with mock.patch("corecoder.llm.time.sleep"), pytest.raises(APIConnectionError):
+            llm.chat(messages=[{"role": "user", "content": "hi"}])
+
+        assert [call.kwargs["model"] for call in create.call_args_list] == ["gpt-4o"] * 3
+
+    def test_config_reads_ordered_fallback_models(self):
+        with mock.patch.dict(
+            "os.environ",
+            {"CORECODER_FALLBACK_MODELS": " gpt-4o-mini, ,deepseek-chat,"},
+            clear=False,
+        ):
+            assert Config.from_env().fallback_models == ("gpt-4o-mini", "deepseek-chat")
+
+    def test_openai_sdk_rate_limit_then_sse_fallback(self):
+        try:
+            import httpx
+        except ModuleNotFoundError:
+            import httpx2 as httpx
+        from openai import OpenAI
+
+        requested_models = []
+
+        def provider(request):
+            payload = json.loads(request.content)
+            requested_models.append(payload["model"])
+            if payload["model"] == "gpt-4o":
+                return httpx.Response(429, json={"error": {
+                    "message": "rate limited", "type": "rate_limit_error",
+                }})
+            chunks = [
+                {"id": "reply", "object": "chat.completion.chunk", "created": 0,
+                 "model": "gpt-4o-mini", "choices": [{"index": 0, "delta": {"content": "recovered"}}]},
+                {"id": "reply", "object": "chat.completion.chunk", "created": 0,
+                 "model": "gpt-4o-mini", "choices": [],
+                 "usage": {"prompt_tokens": 7, "completion_tokens": 2}},
+            ]
+            body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=body)
+
+        llm = LLM(model="gpt-4o", api_key="sk-test", fallback_models=["gpt-4o-mini"])
+        llm.client = OpenAI(
+            api_key="sk-test",
+            max_retries=0,
+            http_client=httpx.Client(transport=httpx.MockTransport(provider)),
+        )
+
+        with mock.patch("corecoder.llm.time.sleep"):
+            result = llm.chat(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "recovered"
+        assert (result.prompt_tokens, result.completion_tokens) == (7, 2)
+        assert requested_models == ["gpt-4o", "gpt-4o", "gpt-4o", "gpt-4o-mini"]

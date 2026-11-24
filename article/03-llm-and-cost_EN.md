@@ -2,7 +2,7 @@
 
 The last two pieces covered the loop and the tools, the agent's hands and feet. This piece covers the brain's interface: how the model gets plugged in, how streaming output is handled, how to survive a provider acting up, and a question many tutorials skip but that you'll care about on day one after going live, namely how much this round actually cost.
 
-The file is `corecoder/llm.py`, 364 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
+The file is `corecoder/llm.py`, 407 lines, the largest single file in the engine. It's large because it carries, on your behalf, all the inelegant parts of dealing with a real API.
 
 ## A bet: everyone looks like OpenAI
 
@@ -112,7 +112,7 @@ The logic is classic exponential backoff: failures that are obviously transient,
 
 This retry logic is worth calling out specifically, because "a project this small surely has no room to bother with retries" is a natural misconception, and the truth is the opposite. Retry is not only present, it's thought through quite carefully, even defending with `getattr` against the base `APIError` possibly lacking a `status_code` attribute (different SDK versions have different exception hierarchies, and grabbing the attribute by force would blow up).
 
-What CoreCoder didn't do is Claude Code's heavier graceful degradation: auto-switching to a fallback model on persistent server-side 529s, and a dollar-denominated budget cap. It genuinely didn't do these two, but the reason isn't oversight, it's a tradeoff. A fallback model involves the "which model can stand in for which" policy that's hard to unify across providers, and a dollar budget requires maintaining a price table that keeps changing. CoreCoder did the part it could implement cleanly (backoff retry) and left the part that would drag in a lot of provider-specific logic (fallback, hard budget) for you to add as needed. Knowing "what it did" and "what it deliberately didn't do" is far more useful than a vague "it's crude."
+CoreCoder also has an explicitly configured fallback chain. Set `CORECODER_FALLBACK_MODELS=gpt-5.4-mini,deepseek-chat` and, after the primary model exhausts its create-time transient retries, the next model gets the same request. A 400 is still a request error, not a reason to hide a bad configuration. A stream that has already started is retried only on the same model, never replayed through another one. The CLI reports the selected fallback on stderr, and embedders can use the optional `on_fallback` callback. A hard dollar budget remains an extension point: the chain adds resilience without guessing provider-specific substitution policy on its own.
 
 There's also an easily overlooked coordination detail. `stream_options` is an OpenAI extension that some providers don't recognize and answer with a 400. CoreCoder handles it like this:
 
@@ -160,19 +160,18 @@ _PRICING = {
 
 That table is only the default. `_load_pricing()` overlays it with `~/.corecoder/pricing.json` in the same shape, so a new model or a moved price lands without waiting for a release; a missing or broken file quietly means the built-ins.
 
-The `estimated_cost` property takes the accumulated tokens and multiplies by the matching unit price:
+The `estimated_cost` property keeps token usage per serving model and charges each slice at that model's rate, so a fallback response is not billed at the primary model's price:
 
 ```python
-@property
-def estimated_cost(self) -> float | None:
-    pricing = _load_pricing().get(self.model)
-    if not pricing:
+pricing = _load_pricing()
+cost = 0.0
+for model, (prompt_tokens, completion_tokens) in self._usage_by_model.items():
+    if model not in pricing:
         return None
-    input_rate, output_rate = pricing
-    return (
-        self.total_prompt_tokens * input_rate / 1_000_000
-        + self.total_completion_tokens * output_rate / 1_000_000
-    )
+    input_rate, output_rate = pricing[model]
+    cost += prompt_tokens * input_rate / 1_000_000
+    cost += completion_tokens * output_rate / 1_000_000
+return cost
 ```
 
 Notice the return type is `float | None`. For a model not in the table, it doesn't guess, it honestly returns `None`, and the CLI, seeing `None`, just doesn't show a price rather than inventing a number to fool you. This is a small but important honesty: better to say "I don't know" than to hand you a cost that looks precise but is made up. The CLI's `/tokens` command shows it:
@@ -185,7 +184,7 @@ Of course this is only an estimate; the price table goes stale, and cache discou
 
 ## Where config comes from
 
-Finally, a thread through `config.py` (55 lines). It reads config from environment variables with a sensible priority:
+Finally, a thread through `config.py` (61 lines). It reads config from environment variables with a sensible priority:
 
 ```python
 api_key = (
@@ -203,7 +202,7 @@ The dedicated variable wins, then it falls back to the generic `OPENAI_API_KEY`,
 - The bet that "most providers are OpenAI-compatible" lets the whole provider layer thin out to a single wrapper over the openai SDK, and switching providers is two environment variables.
 - In streaming output, tool-call arguments arrive in fragments, to be accumulated by index then `json.loads`-ed, and bad data must degrade gracefully.
 - Retry belongs in the provider layer, not stuffed into the main loop. Exponential backoff retries only transient failures and 5xx, never 4xx.
-- CoreCoder did backoff retry and deliberately skipped the fallback model and dollar hard budget, because the latter two drag in a lot of provider-specific logic. Tell "didn't do" apart from "deliberately didn't do."
+- CoreCoder combines exponential backoff with an opt-in fallback chain, but only switches models before streaming begins. A hard dollar budget remains an extension point.
 - Cost estimation returns `None` for an unknown model rather than inventing a falsely precise number. Honesty beats looking good.
 
 Next piece, we face the agent's hardest physical constraint: the context window is only so big, and how a long task fits inside it.

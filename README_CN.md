@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**编程 agent 里的 nanoGPT。1.5k 行引擎、整包 3492 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
+**编程 agent 里的 nanoGPT。1.5k 行引擎、整包 3543 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1532_LoC-blue)](article/)
+[![engine](https://img.shields.io/badge/engine-1577_LoC-blue)](article/)
 [![源码导读](https://img.shields.io/badge/源码导读-8篇双语-orange)](article/)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| 代码量 | 引擎约 1532 行 / 整包 3492 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
+| 代码量 | 引擎约 1577 行 / 整包 3543 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
 | 读完要多久 | 一个下午 | 读不了（闭源） | 得啃几天 | 一个下午 |
 | 能不能下断点改了再跑 | 能，每一行 | 不能 | 能，但量大 | 能 |
 | 定位 | 读懂并 fork 出你自己的 agent | 生产级编程助手 | 终端结对编程 | 教学用最小 GPT |
@@ -36,9 +36,9 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 我一直觉得 coding agent 被讲得太玄了。把 Claude Code、Cursor 这类工具扒到底，核心是一个 while 循环套着一个大模型，外加七八个让它能真正动手的工具。难的从来不是这个循环，而是循环跑进真实世界以后要兜的那些底。CoreCoder 就是把这个核心老老实实写出来的最小版本。
 
-引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1532 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3492 行、净 2900 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
+引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1577 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3543 行、净 2953 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
 
-它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 422 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
+它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 428 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
 代码来自一次公开拆解。公开的源码分析里，Claude Code 这类生产级 agent 暴露出不少关键架构，我挑出最核心的一层，用尽量少的代码诚实地复写了一遍。所以读 CoreCoder，约等于读一份基于公开源码分析的「可运行注释版」：讲的是这类 agent 的核心思路，而它本身只是最小复写，就摆在你机器上，随你拆、随你改。
 
@@ -74,6 +74,8 @@ pip install -e .
 
 如果服务用 400 错误指出 `temperature` 不受支持，CoreCoder 会移除这个参数重试，采用服务端支持的默认值。Kimi 不带引号的报错也能识别，无需额外设置 `CORECODER_TEMPERATURE`。
 
+需要扛 provider 侧故障时，可以配置有序 fallback 链，例如 `CORECODER_FALLBACK_MODELS=gpt-5.4-mini,deepseek-chat`。第一个之后的模型必须也属于当前配置的 provider；LiteLLM 则沿用它自己的跨 provider 模型串。只有建连阶段的瞬时故障重试耗尽后才切换，400 不会被换模型掩盖，已经开始返回内容的流也不会换模型重放。CLI 会在 stderr 标出实际启用的备用模型，每次响应的 token 成本也按真正提供服务的模型计算。
+
 Kimi、Qwen 这些同样是改这两个变量；连 OpenAI 兼容接口都不给的 provider，装上可选的 LiteLLM 后端（`pip install "corecoder[litellm]"`）能路由一百多家。第三篇文章把这块讲得更细。思考模型也是一等公民：deepseek-reasoner、kimi-k3 这类模型的思考过程会实时流出来，CoreCoder 把它用暗色显示出来。普通回答不把思考过程放进对话历史；Kimi 和 DeepSeek 的工具调用轮则按 thinking 协议要求，把 `reasoning_content` 带进下一次请求。key 可以直接 `export`，也可以在项目根目录扔个 `.env`，启动时自动加载。然后：
 
 端到端真机冒烟过三家（读文件、改代码、跑一次确认、自己报告）：DeepSeek、Qwen3、Kimi K2，走同一个 OpenRouter 兼容端点，各自完整跑完全循环。写脚本用 one-shot 的留意：`-p` 默认拒绝一切改动类工具，要加 `--yes`，这是设计如此。
@@ -90,7 +92,7 @@ corecoder -p "给 parse_config() 加错误处理"   # 一次性模式，干完�
 ```
 corecoder/
 ├── agent.py        agent 主循环 + 并行工具执行       240 行   ← 从这里开始读
-├── llm.py          流式客户端 + 重试 + 成本统计       364 行
+├── llm.py          流式客户端 + 重试 + 成本统计       407 行
 ├── context.py      三层上下文压缩                     251 行
 ├── session.py      会话存盘 / 续聊 + 路径穿越防护     101 行
 ├── permissions.py  改动类工具的用户授权                81 行
@@ -99,8 +101,8 @@ corecoder/
 ├── mcp.py          MCP 工具、文本资源和提示模板         413 行
 ├── mcp_http.py     远程 Streamable HTTP 连接           229 行
 ├── prompt.py       系统提示词                          41 行
-├── cli.py          REPL + 斜杠命令 + 一次性模式        404 行
-├── config.py       环境变量配置                        55 行
+├── cli.py          REPL + 斜杠命令 + 一次性模式        406 行
+├── config.py       环境变量配置                        61 行
 ├── checkpoints.py  /undo 快照与回滚                     125 行
 ├── demo.py         离线端到端演示                       101 行
 └── tools/
@@ -192,7 +194,7 @@ worker 名不能重复，依赖必须指向已有名字，循环依赖会在任�
 
 读懂之后，最自然的下一步就是 fork。起手不用伤筋动骨：
 
-- **换个你常用的模型。** 就是上面那两个环境变量，`llm.py`（364 行）是所有 provider 适配的入口。
+- **换个你常用的模型。** 就是上面那两个环境变量，`llm.py`（407 行）是所有 provider 适配的入口。
 - **加一件你自己的工具。** 照 `tools/base.py`（32 行）的工具基类写个新文件，跑测试、抓网页、调 LSP 都行，第二篇文章末尾手把手带你写第一个。
 - **改系统提示词。** `prompt.py` 才 41 行，改一句就能看到 agent 的脾气变了，是门槛最低的「改一处就有反馈」。
 - **直接当库 import。** 顶层导出了 `Agent`、`LLM`、`Config`，能嵌进你自己的程序：
@@ -207,7 +209,7 @@ print(Agent(llm=llm).chat("找出项目里所有 TODO 注释并列出来"))
 往深里做，方向也都摆在明处。下面这些 CoreCoder 都没做，是设计取舍，不是没做完；换个角度，每一条都是你能接着往下做、把它推向更强的入口：
 
 - **bash 的危险命令拦截只是正则黑名单。** 防手滑，不是安全沙箱。要面对不可信输入，就得上 seccomp 或容器隔离。这条最硬，要一路走到系统调用和隔离那一层。
-- **重试只做了指数退避。** 没有 fallback 模型，也没有美元硬预算。顺着 `llm.py` 往下，加一条 fallback 模型链和超预算自动停的闸，改动基本就集中在这一个文件。
+- **重试和可选 fallback 都收在 provider 层。** 美元硬预算仍没做。顺着 `llm.py` 往下，加一个超预算自动停的闸即可，别把费用策略挪进 agent 主循环。
 - **子 agent 团队会在返回前汇合。** 命名 worker 已经能带着隔离上下文并发执行；异步后台任务、流式进度和角色专属工具预设仍是扩展点，不为了多 agent 就默认再加一层编排框架。
 - **不做 RAG 或资源订阅。** MCP 文本资料和提示模板只按需获取，不建检索索引，也不跑后台同步。给大仓加检索式代码定位仍然是留给你扩展的方向。
 
