@@ -64,6 +64,8 @@ def main():
 
         result = int(pytest.main([
             "-q", "--import-mode=importlib", str(checkout / "tests/test_mcp_resources.py"),
+            str(checkout / "tests/test_session.py") + "::test_failed_save_preserves_the_last_complete_session",
+            str(checkout / "tests/test_session.py") + "::test_successful_save_replaces_the_complete_session",
             "--basetemp=" + str(Path(work) / "pytest"), "-o", "cache_dir=" + str(Path(work) / "cache"),
         ]))
         loaded = {name: Path(module.__file__).resolve() for name, module in list(sys.modules.items())

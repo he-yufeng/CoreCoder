@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**编程 agent 里的 nanoGPT。1.5k 行引擎、整包 3586 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
+**编程 agent 里的 nanoGPT。1.5k 行引擎、整包 3603 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1597_LoC-blue)](article/)
+[![engine](https://img.shields.io/badge/engine-1614_LoC-blue)](article/)
 [![源码导读](https://img.shields.io/badge/源码导读-8篇双语-orange)](article/)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| 代码量 | 引擎约 1597 行 / 整包 3586 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
+| 代码量 | 引擎约 1614 行 / 整包 3603 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
 | 读完要多久 | 一个下午 | 读不了（闭源） | 得啃几天 | 一个下午 |
 | 能不能下断点改了再跑 | 能，每一行 | 不能 | 能，但量大 | 能 |
 | 定位 | 读懂并 fork 出你自己的 agent | 生产级编程助手 | 终端结对编程 | 教学用最小 GPT |
@@ -36,7 +36,7 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 我一直觉得 coding agent 被讲得太玄了。把 Claude Code、Cursor 这类工具扒到底，核心是一个 while 循环套着一个大模型，外加七八个让它能真正动手的工具。难的从来不是这个循环，而是循环跑进真实世界以后要兜的那些底。CoreCoder 就是把这个核心老老实实写出来的最小版本。
 
-引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1597 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3586 行、净 2989 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
+引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1614 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3603 行、净 3006 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
 
 它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 449 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
@@ -94,7 +94,7 @@ corecoder/
 ├── agent.py        agent 主循环 + 并行工具执行       240 行   ← 从这里开始读
 ├── llm.py          流式客户端 + 重试 + 成本统计       407 行
 ├── context.py      三层上下文压缩                     251 行
-├── session.py      会话存盘 / 续聊 + 路径穿越防护     127 行
+├── session.py      会话存盘 / 续聊 + 路径穿越防护     144 行
 ├── permissions.py  改动类工具的用户授权                81 行
 ├── hooks.py        工具调用前后的用户 shell 钩子        87 行
 ├── shell.py        POSIX shell 路由（Windows 走 Git Bash） 61 行
@@ -231,7 +231,7 @@ README 只给方向，每条的代码细节第七篇接着讲。挑一个动手�
 quit / exit      退出（Ctrl+C 取消当前回合）
 ```
 
-用 `corecoder --list-sessions` 找到以前的对话。清单和 `/sessions` 一样显示模型、保存时间和简短预览，单份存档坏了不会挡住其他记录。拿到 ID 后，可以用 `corecoder --inspect-session ID` 检查这一份，只看模型、时间和消息数，不显示对话正文。这两个命令都不用 API key。用 `corecoder -r ID` 继续时，CoreCoder 会先检查存档，再连接模型或 MCP 服务。
+用 `corecoder --list-sessions` 找到以前的对话。清单和 `/sessions` 一样显示模型、保存时间和简短预览，单份存档坏了不会挡住其他记录。拿到 ID 后，可以用 `corecoder --inspect-session ID` 检查这一份，只看模型、时间和消息数，不显示对话正文。这两个命令都不用 API key。用 `corecoder -r ID` 继续时，CoreCoder 会先检查存档，再连接模型或 MCP 服务。新档写完整才会替换旧档，途中写入失败仍能从上次完整的存档继续。
 
 会话 ID 会先清洗成安全字符再拿去当文件名，存档统统落在 `~/.corecoder/sessions` 里，恶意会话名穿越不出去。undo 历史也一样落盘：快照写在 `~/.corecoder/checkpoints.json`，重启之后 `/undo` 照样能往回撤。每份快照还会记下这次编辑实际写出的字节；如果文件后来又被手工或 bash 改过，`/undo` 会保留后来的改动和快照，不会直接覆盖。`/tokens` 的费用估算读的是内置价目表，在 `~/.corecoder/pricing.json` 里写自己的价格就会盖掉对应条目，新模型、调价都不用等发版。
 

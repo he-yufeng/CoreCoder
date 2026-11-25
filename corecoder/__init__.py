@@ -1,6 +1,6 @@
 """CoreCoder - Minimal AI coding agent inspired by Claude Code's architecture."""
 
-__version__ = "0.18.0"
+__version__ = "0.18.1"
 
 from corecoder.agent import Agent
 from corecoder.config import Config

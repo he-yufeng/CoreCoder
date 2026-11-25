@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. A 1.5k-line engine inside 3,586 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. A 1.6k-line engine inside 3,603 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1597_LoC-blue)](article/00-index_EN.md)
+[![engine](https://img.shields.io/badge/engine-1614_LoC-blue)](article/00-index_EN.md)
 [![essays](https://img.shields.io/badge/source--reading-8_bilingual-orange)](article/00-index_EN.md)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,597 engine / 3,586 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,614 engine / 3,603 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,7 +36,7 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,597 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,586 physical lines, 2,989 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
+The engine (loop, model interface, context, tools, sessions) is 1,614 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,603 physical lines, 3,006 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
 
 And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The suite has 449 offline tests and an opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
@@ -94,7 +94,7 @@ corecoder/
 ├── agent.py        agent loop + parallel tool exec       240 lines   ← start here
 ├── llm.py          streaming client + retry + cost        407 lines
 ├── context.py      three-tier context compaction          251 lines
-├── session.py      save / resume + path-traversal guard   127 lines
+├── session.py      save / resume + path-traversal guard   144 lines
 ├── permissions.py  consent for mutating tools              81 lines
 ├── hooks.py        Pre/PostToolUse shell hooks             87 lines
 ├── shell.py        POSIX shell routing (Git Bash on Windows) 61 lines
@@ -231,7 +231,7 @@ Inside the REPL, `/help` lists everything; these are the ones you'll reach for:
 quit / exit      exit (Ctrl+C cancels the current round)
 ```
 
-Run `corecoder --list-sessions` to find a saved conversation. It shows the same model, save time and short prompt preview as `/sessions`, and skips files it cannot read. For one ID, `corecoder --inspect-session ID` checks the archive and prints its model, time and message count without showing the conversation. Neither command needs an API key. Use `corecoder -r ID` to continue; it checks the archive before contacting any provider or MCP server.
+Run `corecoder --list-sessions` to find a saved conversation. It shows the same model, save time and short prompt preview as `/sessions`, and skips files it cannot read. For one ID, `corecoder --inspect-session ID` checks the archive and prints its model, time and message count without showing the conversation. Neither command needs an API key. Use `corecoder -r ID` to continue; it checks the archive before contacting any provider or MCP server. A save only replaces the archive after the new file is complete. If the write fails, the last complete save is still there.
 
 Session IDs are sanitized to safe characters before they become filenames, every archive lands under `~/.corecoder/sessions`, and a malicious session name can't traverse out. Undo history persists the same way: checkpoints land in `~/.corecoder/checkpoints.json`, so `/undo` still reaches back after a restart. Each checkpoint also records the bytes the edit produced; if the file changed again by hand or through bash, `/undo` keeps the newer work and the checkpoint instead of overwriting it. The cost estimate behind `/tokens` reads a built-in price table, and `~/.corecoder/pricing.json` overrides any entry in it, so a new model or a moved price lands without waiting for a release.
 

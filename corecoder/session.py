@@ -5,11 +5,13 @@ CoreCoder distills this to: JSON dump of messages + model config.
 """
 
 import json
+import os
 import re
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 SESSIONS_DIR = Path.home() / ".corecoder" / "sessions"
 _SAFE_SESSION_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -53,7 +55,22 @@ def save_session(messages: list[dict], model: str, session_id: str | None = None
     }
 
     path = _session_path(session_id)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    staged = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=".session-", suffix=".tmp", delete=False,
+        ) as handle:
+            staged = Path(handle.name)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        staged.replace(path)
+        staged = None
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
     return session_id
 
 
