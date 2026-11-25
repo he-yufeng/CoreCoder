@@ -46,9 +46,18 @@ def main():
             "saved_at": "2026-01-01 12:00:00",
             "messages": [{"role": "user", "content": "saved before the restart"}],
         }), encoding="utf-8")
+        (sessions / "corrupt-session.json").write_text('{"model": "m", "messages": null}', encoding="utf-8")
         catalog = subprocess.run([cli, "--list-sessions"], cwd=work, env=env,
                                  capture_output=True, text=True, check=True)
         assert "wheel-session" in catalog.stdout and "saved before the restart" in " ".join(catalog.stdout.split())
+        assert "corrupt-session" not in catalog.stdout
+        inspected = subprocess.run([cli, "--inspect-session", "wheel-session"], cwd=work, env=env,
+                                   capture_output=True, text=True, check=True)
+        assert "Session: wheel-session" in inspected.stdout and "Model: fixture-model" in inspected.stdout
+        assert "Messages: 1" in inspected.stdout and "saved before the restart" not in inspected.stdout
+        invalid = subprocess.run([cli, "--resume", "corrupt-session"], cwd=work, env=env,
+                                 capture_output=True, text=True, check=False)
+        assert invalid.returncode == 1 and "invalid session file" in invalid.stderr.lower(), invalid
         # The package is already imported from site-packages; this path is only for test fixtures.
         sys.path.insert(0, str(checkout))
         import pytest
@@ -63,6 +72,7 @@ def main():
     print(json.dumps({"version": corecoder.__version__, "wheelSha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
                       "packageRoot": str(package), "matchingPythonFiles": len(sources),
                       "consoleExit": help_result.returncode, "sessionCatalogExit": catalog.returncode,
+                      "sessionInspectExit": inspected.returncode, "invalidSessionExit": invalid.returncode,
                       "resourceTestsExit": result}, indent=2))
     raise SystemExit(result)
 

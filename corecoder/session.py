@@ -8,6 +8,7 @@ import json
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 SESSIONS_DIR = Path.home() / ".corecoder" / "sessions"
@@ -56,46 +57,71 @@ def save_session(messages: list[dict], model: str, session_id: str | None = None
     return session_id
 
 
+@dataclass(frozen=True)
+class SavedSession:
+    session_id: str
+    model: str
+    saved_at: str
+    messages: list[dict]
+
+
+class SessionFormatError(ValueError):
+    """A readable file does not contain a session."""
+
+
+def read_session(session_id: str) -> SavedSession:
+    """Read a session without changing it; raise OSError or ValueError on failure."""
+    path = _session_path(session_id)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SessionFormatError("Expected a session object")
+
+    model = data.get("model")
+    if not isinstance(model, str) or not model.strip():
+        raise SessionFormatError("Expected a model name")
+
+    messages = data.get("messages")
+    if not isinstance(messages, list) or any(
+        not isinstance(message, dict) or not isinstance(message.get("role"), str) or not message["role"].strip()
+        for message in messages
+    ):
+        raise SessionFormatError("Expected messages with roles")
+
+    saved_at = data.get("saved_at")
+    return SavedSession(path.stem, model, saved_at if isinstance(saved_at, str) and saved_at else "?", messages)
+
+
 def load_session(session_id: str) -> tuple[list[dict], str] | None:
     """Load a saved session. Returns (messages, model) or None."""
-    path = _session_path(session_id)
-    if not path.exists():
-        return None
-
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return None
-        return data["messages"], data["model"]
-    except (json.JSONDecodeError, UnicodeDecodeError, KeyError, OSError):
-        # a corrupt or truncated session file shouldn't crash resume
+        saved = read_session(session_id)
+    except (ValueError, OSError):
         return None
+    return saved.messages, saved.model
 
 
 def list_sessions() -> list[dict]:
     """List available sessions, newest first."""
-    if not SESSIONS_DIR.exists():
-        return []
-
     sessions = []
     for f in sorted(SESSIONS_DIR.glob("*.json"), reverse=True):
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                continue
-            # grab first user message as preview
-            preview = ""
-            for m in data.get("messages", []):
-                if m.get("role") == "user" and m.get("content"):
-                    preview = m["content"][:80]
-                    break
-            sessions.append({
-                "id": data.get("id", f.stem),
-                "model": data.get("model", "?"),
-                "saved_at": data.get("saved_at", "?"),
-                "preview": preview,
-            })
-        except (json.JSONDecodeError, UnicodeDecodeError, KeyError):
+        if f.stem != _normalize_session_id(f.stem):
             continue
+        try:
+            saved = read_session(f.stem)
+        except (ValueError, OSError):
+            continue
+
+        preview = ""
+        for message in saved.messages:
+            content = message.get("content")
+            if message["role"] == "user" and isinstance(content, str) and content:
+                preview = content[:80]
+                break
+        sessions.append({
+            "id": f.stem,
+            "model": saved.model,
+            "saved_at": saved.saved_at,
+            "preview": preview,
+        })
 
     return sessions[:20]  # cap at 20

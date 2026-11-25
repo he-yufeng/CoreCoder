@@ -18,7 +18,7 @@ from .hooks import load_hooks
 from .llm import LLM, LiteLLM
 from .mcp import load_mcp_tools
 from .permissions import DEFAULT_STORE, Permission
-from .session import list_sessions, load_session, save_session
+from .session import SavedSession, list_sessions, read_session, save_session
 from .tools import ALL_TOOLS
 
 console = Console()
@@ -38,8 +38,11 @@ def _parse_args():
     p.add_argument("--demo", action="store_true", help="Run the offline scripted demo (no API key needed)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
     p.add_argument("--list-sessions", action="store_true", help="List saved sessions offline")
+    p.add_argument("--inspect-session", metavar="ID", help="Check a saved session and show its metadata offline")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     args = p.parse_args()
+    if args.inspect_session is not None and (args.list_sessions or args.demo or args.prompt is not None or args.resume is not None):
+        p.error("--inspect-session cannot be combined with --list-sessions, --demo, --prompt or --resume")
     if args.list_sessions and (args.demo or args.prompt is not None or args.resume is not None):
         p.error("--list-sessions cannot be combined with --demo, --prompt or --resume")
     return args
@@ -53,6 +56,19 @@ def _show_sessions():
         console.print(f"  {s['id']} ({s['model']}, {s['saved_at']}) {s['preview']}", markup=False)
 
 
+def _require_saved_session(session_id: str) -> SavedSession:
+    try:
+        return read_session(session_id)
+    except FileNotFoundError:
+        reason = "not found"
+    except OSError:
+        reason = "could not read the session file"
+    except ValueError:
+        reason = "invalid session file"
+    err_console.print(f"Session '{session_id}': {reason}.", style="red", markup=False)
+    raise SystemExit(1)
+
+
 def main():
     args = _parse_args()
 
@@ -60,15 +76,26 @@ def main():
         _show_sessions()
         return
 
+    if args.inspect_session is not None:
+        saved = _require_saved_session(args.inspect_session)
+        console.print(
+            f"Session: {saved.session_id}\nModel: {saved.model}\nSaved: {saved.saved_at}\nMessages: {len(saved.messages)}",
+            markup=False,
+        )
+        return
+
     if args.demo:
         from .demo import run_demo
         raise SystemExit(run_demo())
 
+    saved = _require_saved_session(args.resume) if args.resume is not None else None
     config = Config.from_env()
 
-    # CLI args override env vars
+    # CLI args override the saved model and environment defaults.
     if args.model:
         config.model = args.model
+    elif saved is not None:
+        config.model = saved.model
     if args.base_url:
         config.base_url = args.base_url
     if args.api_key:
@@ -115,19 +142,9 @@ def main():
         hooks=load_hooks(),
     )
 
-    # resume saved session
-    if args.resume:
-        loaded = load_session(args.resume)
-        if loaded:
-            agent.messages, loaded_model = loaded
-            # restore the model from the saved session unless overridden by CLI
-            if not args.model:
-                agent.llm.model = loaded_model
-                config.model = loaded_model
-            console.print(f"[green]Resumed session: {args.resume} (model: {agent.llm.model})[/green]")
-        else:
-            console.print(f"[red]Session '{args.resume}' not found.[/red]")
-            sys.exit(1)
+    if saved is not None:
+        agent.messages = saved.messages
+        console.print(f"Resumed session: {saved.session_id} (model: {config.model})", style="green", markup=False)
 
     # one-shot mode
     if args.prompt:
