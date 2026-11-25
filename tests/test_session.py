@@ -1,4 +1,6 @@
+import errno
 import json
+import signal
 
 import pytest
 
@@ -21,6 +23,41 @@ def test_default_session_ids_do_not_collide(tmp_path, monkeypatch):
         [{"role": "user", "content": "second"}],
         "model-b",
     )
+
+
+def test_failed_save_preserves_the_last_complete_session(tmp_path, monkeypatch):
+    resource = pytest.importorskip("resource")
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    old_messages = [{"role": "user", "content": "previous conversation"}]
+    sid = save_session(old_messages, "model-a", "keep")
+    saved = tmp_path / f"{sid}.json"
+    before = saved.read_bytes()
+
+    limits = resource.getrlimit(resource.RLIMIT_FSIZE)
+    if limits[1] != resource.RLIM_INFINITY and limits[1] < 512:
+        pytest.skip("hard file size limit is below the test threshold")
+    handler = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    try:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (512, limits[1]))
+        with pytest.raises(OSError) as failed:
+            save_session([{"role": "user", "content": "x" * 4096}], "model-b", sid)
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, limits)
+        signal.signal(signal.SIGXFSZ, handler)
+
+    assert failed.value.errno == errno.EFBIG
+    assert saved.read_bytes() == before
+    assert load_session(sid) == (old_messages, "model-a")
+    assert list(tmp_path.iterdir()) == [saved]
+
+
+def test_successful_save_replaces_the_complete_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    sid = save_session([{"role": "user", "content": "before"}], "model-a", "keep")
+    messages = [{"role": "user", "content": "第二次保存"}]
+    assert save_session(messages, "model-b", sid) == sid
+    assert load_session(sid) == (messages, "model-b")
+    assert list(tmp_path.iterdir()) == [tmp_path / "keep.json"]
 
 
 def test_session_id_path_traversal_is_neutralized(tmp_path, monkeypatch):
