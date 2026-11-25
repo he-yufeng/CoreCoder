@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from corecoder import session as session_module
@@ -105,3 +107,33 @@ def test_invalid_utf8_session_is_skipped_in_listing(tmp_path, monkeypatch):
     ids = [s["id"] for s in session_module.list_sessions()]
     assert sid in ids
     assert len(ids) == 1
+
+
+@pytest.mark.parametrize("bad_fields", [
+    {"messages": None},
+    {"messages": [None]},
+    {"messages": [{"content": "missing role"}]},
+    {"model": 10},
+    {"model": "  "},
+])
+def test_malformed_record_does_not_hide_valid_sessions(tmp_path, monkeypatch, bad_fields):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    sid = save_session([{"role": "user", "content": "keep me"}], "m", "keep")
+    broken = tmp_path / "zz_broken.json"
+    original = json.dumps({"messages": [], "model": "m", **bad_fields})
+    broken.write_text(original, encoding="utf-8")
+
+    assert load_session("zz_broken") is None
+    assert [s["id"] for s in session_module.list_sessions()] == [sid]
+    assert broken.read_text(encoding="utf-8") == original
+
+
+def test_catalog_uses_resumable_filename_not_old_embedded_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(session_module, "SESSIONS_DIR", tmp_path)
+    (tmp_path / "renamed.json").write_text(json.dumps({
+        "id": "old-name", "model": "m", "messages": [],
+    }), encoding="utf-8")
+
+    entry, = session_module.list_sessions()
+    assert entry["id"] == "renamed"
+    assert load_session(entry["id"]) == ([], "m")
