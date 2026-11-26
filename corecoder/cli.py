@@ -18,7 +18,7 @@ from .hooks import load_hooks
 from .llm import LLM, LiteLLM
 from .mcp import load_mcp_tools
 from .permissions import DEFAULT_STORE, Permission
-from .session import SavedSession, fork_session, list_sessions, read_session, save_session
+from .session import SavedSession, common_message_prefix, fork_session, list_sessions, read_session, save_session
 from .tools import ALL_TOOLS
 
 console = Console()
@@ -41,6 +41,7 @@ def _parse_args():
     sessions.add_argument("--list-sessions", action="store_true", help="List saved sessions offline")
     sessions.add_argument("--inspect-session", metavar="ID", help="Check a saved session and show its metadata offline")
     sessions.add_argument("--fork-session", metavar="ID", help="Create a session before a retained turn, offline")
+    sessions.add_argument("--compare-sessions", nargs=2, metavar=("LEFT", "RIGHT"), help="Compare two saved histories offline")
     p.add_argument("--before-turn", type=int, metavar="N", help="Retained user turn to leave out (1-based, for --fork-session)")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     args = p.parse_args()
@@ -53,6 +54,7 @@ def _parse_args():
             ("--list-sessions", args.list_sessions),
             ("--inspect-session", args.inspect_session is not None),
             ("--fork-session", args.fork_session is not None),
+            ("--compare-sessions", args.compare_sessions is not None),
         ):
             if active:
                 p.error(f"{option} cannot be combined with --demo, --prompt or --resume")
@@ -107,6 +109,21 @@ def main():
             err_console.print("Could not create a new session file.", style="red")
             raise SystemExit(1) from None
         console.print(f"Forked session: {sid}", markup=False)
+        return
+
+    if args.compare_sessions is not None:
+        left, right = (_require_saved_session(sid) for sid in args.compare_sessions)
+        shared = common_message_prefix(left.messages, right.messages)
+        left_remaining = len(left.messages) - shared
+        right_remaining = len(right.messages) - shared
+        console.print(
+            f"Left: {left.session_id}\nRight: {right.session_id}\n"
+            f"Shared stored messages: {shared}\n"
+            f"Remaining messages: {left_remaining} left, {right_remaining} right",
+            markup=False,
+        )
+        if left_remaining and right_remaining:
+            console.print(f"First different stored message: {shared + 1}")
         return
 
     if args.demo:
