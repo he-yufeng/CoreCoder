@@ -117,6 +117,20 @@ class ContextManager:
 
     _SUMMARY_MARKER = "[Context compressed - conversation summary]"
     _COLLAPSE_MARKER = "[Hard context reset]"
+    _SUMMARY_ACK = "Got it, I have the context from our earlier conversation."
+    _COLLAPSE_ACK = "Context restored. Continuing from where we left off."
+
+    @classmethod
+    def has_summary_prefix(cls, messages: list[dict]) -> bool:
+        if len(messages) < 2 or messages[0].get("role") != "user":
+            return False
+        content = messages[0].get("content")
+        if not isinstance(content, str):
+            return False
+        return any(
+            content.startswith(marker + "\n") and messages[1] == {"role": "assistant", "content": ack}
+            for marker, ack in ((cls._SUMMARY_MARKER, cls._SUMMARY_ACK), (cls._COLLAPSE_MARKER, cls._COLLAPSE_ACK))
+        )
 
     @classmethod
     def _split_prior_summary(cls, messages: list[dict]) -> tuple[str, list[dict]]:
@@ -162,7 +176,7 @@ class ContextManager:
         })
         messages.append({
             "role": "assistant",
-            "content": "Got it, I have the context from our earlier conversation.",
+            "content": self._SUMMARY_ACK,
         })
         messages.extend(tail)
         return True
@@ -183,7 +197,7 @@ class ContextManager:
         })
         messages.append({
             "role": "assistant",
-            "content": "Context restored. Continuing from where we left off.",
+            "content": self._COLLAPSE_ACK,
         })
         messages.extend(tail)
 

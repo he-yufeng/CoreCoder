@@ -40,12 +40,18 @@ def main():
         env.update(HOME=work, USERPROFILE=work)
         sessions = Path(work) / ".corecoder" / "sessions"
         sessions.mkdir(parents=True)
-        (sessions / "wheel-session.json").write_text(json.dumps({
+        original = sessions / "wheel-session.json"
+        prefix = [
+            {"role": "user", "content": "saved before the restart"},
+            {"role": "assistant", "content": "first answer"},
+        ]
+        original.write_text(json.dumps({
             "id": "wheel-session",
             "model": "fixture-model",
             "saved_at": "2026-01-01 12:00:00",
-            "messages": [{"role": "user", "content": "saved before the restart"}],
+            "messages": [*prefix, {"role": "user", "content": "try another approach"}],
         }), encoding="utf-8")
+        before = original.read_bytes()
         (sessions / "corrupt-session.json").write_text('{"model": "m", "messages": null}', encoding="utf-8")
         catalog = subprocess.run([cli, "--list-sessions"], cwd=work, env=env,
                                  capture_output=True, text=True, check=True)
@@ -54,7 +60,21 @@ def main():
         inspected = subprocess.run([cli, "--inspect-session", "wheel-session"], cwd=work, env=env,
                                    capture_output=True, text=True, check=True)
         assert "Session: wheel-session" in inspected.stdout and "Model: fixture-model" in inspected.stdout
-        assert "Messages: 1" in inspected.stdout and "saved before the restart" not in inspected.stdout
+        assert "Messages: 3" in inspected.stdout and "Retained turns: 2" in inspected.stdout
+        assert prefix[0]["content"] not in inspected.stdout
+        forked = subprocess.run([cli, "--fork-session", "wheel-session", "--before-turn", "2"], cwd=work, env=env,
+                                 capture_output=True, text=True, check=True, timeout=20)
+        assert forked.stdout.startswith("Forked session: ") and not forked.stderr
+        fork_id = forked.stdout.strip().removeprefix("Forked session: ")
+        assert fork_id != original.stem and original.read_bytes() == before
+        child = json.loads((sessions / f"{fork_id}.json").read_text(encoding="utf-8"))
+        assert child["id"] == fork_id and child["model"] == "fixture-model" and child["messages"] == prefix
+        fork_inspected = subprocess.run([cli, "--inspect-session", fork_id], cwd=work, env=env,
+                                        capture_output=True, text=True, check=True, timeout=20)
+        assert "Messages: 2" in fork_inspected.stdout and "Retained turns: 1" in fork_inspected.stdout
+        assert prefix[0]["content"] not in fork_inspected.stdout
+        version = subprocess.run([cli, "--version"], cwd=work, env=env, capture_output=True, text=True, check=True)
+        assert version.stdout.strip() == f"corecoder {corecoder.__version__}"
         invalid = subprocess.run([cli, "--resume", "corrupt-session"], cwd=work, env=env,
                                  capture_output=True, text=True, check=False)
         assert invalid.returncode == 1 and "invalid session file" in invalid.stderr.lower(), invalid
@@ -75,6 +95,7 @@ def main():
                       "packageRoot": str(package), "matchingPythonFiles": len(sources),
                       "consoleExit": help_result.returncode, "sessionCatalogExit": catalog.returncode,
                       "sessionInspectExit": inspected.returncode, "invalidSessionExit": invalid.returncode,
+                      "sessionForkExit": forked.returncode, "forkInspectExit": fork_inspected.returncode,
                       "resourceTestsExit": result}, indent=2))
     raise SystemExit(result)
 
