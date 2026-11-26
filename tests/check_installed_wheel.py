@@ -73,6 +73,13 @@ def main():
                                         capture_output=True, text=True, check=True, timeout=20)
         assert "Messages: 2" in fork_inspected.stdout and "Retained turns: 1" in fork_inspected.stdout
         assert prefix[0]["content"] not in fork_inspected.stdout
+        archives = {path.name: path.read_bytes() for path in sessions.iterdir()}
+        compared = subprocess.run([cli, "--compare-sessions", original.stem, fork_id], cwd=work, env=env,
+                                  capture_output=True, text=True, check=True, timeout=20)
+        assert "Shared stored messages: 2" in compared.stdout
+        assert "Remaining messages: 1 left, 0 right" in compared.stdout
+        assert prefix[0]["content"] not in compared.stdout and not compared.stderr
+        assert {path.name: path.read_bytes() for path in sessions.iterdir()} == archives
         version = subprocess.run([cli, "--version"], cwd=work, env=env, capture_output=True, text=True, check=True)
         assert version.stdout.strip() == f"corecoder {corecoder.__version__}"
         invalid = subprocess.run([cli, "--resume", "corrupt-session"], cwd=work, env=env,
@@ -96,6 +103,7 @@ def main():
                       "consoleExit": help_result.returncode, "sessionCatalogExit": catalog.returncode,
                       "sessionInspectExit": inspected.returncode, "invalidSessionExit": invalid.returncode,
                       "sessionForkExit": forked.returncode, "forkInspectExit": fork_inspected.returncode,
+                      "sessionCompareExit": compared.returncode,
                       "resourceTestsExit": result}, indent=2))
     raise SystemExit(result)
 

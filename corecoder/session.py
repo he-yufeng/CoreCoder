@@ -104,6 +104,13 @@ def fork_session(saved: SavedSession, before_turn: int) -> str:
     return _write_session(prefix, saved.model, _new_session_id(), create_only=True)
 
 
+def common_message_prefix(left: list[dict], right: list[dict]) -> int:
+    for index, (left_message, right_message) in enumerate(zip(left, right)):
+        if json.dumps(left_message, sort_keys=True) != json.dumps(right_message, sort_keys=True):
+            return index
+    return min(len(left), len(right))
+
+
 class SessionFormatError(ValueError):
     """A readable file does not contain a session."""
 

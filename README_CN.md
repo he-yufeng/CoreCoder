@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**编程 agent 里的 nanoGPT。1.6k 行引擎、整包 3664 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
+**编程 agent 里的 nanoGPT。1.6k 行引擎、整包 3688 行纯 Python 全部一口气可读，读懂一个 coding agent 到底怎么运作，再 fork 出你自己的。**
 
 *learn from it · fork it · ship something better*
 
@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1645_LoC-blue)](article/)
+[![engine](https://img.shields.io/badge/engine-1650_LoC-blue)](article/)
 [![源码导读](https://img.shields.io/badge/源码导读-8篇双语-orange)](article/)
 
 </div>
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| 代码量 | 引擎约 1645 行 / 整包 3664 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
+| 代码量 | 引擎约 1650 行 / 整包 3688 行 | 几十万行（闭源） | 数万行 Python | 约 600 行（两个文件） |
 | 读完要多久 | 一个下午 | 读不了（闭源） | 得啃几天 | 一个下午 |
 | 能不能下断点改了再跑 | 能，每一行 | 不能 | 能，但量大 | 能 |
 | 定位 | 读懂并 fork 出你自己的 agent | 生产级编程助手 | 终端结对编程 | 教学用最小 GPT |
@@ -36,9 +36,9 @@ nanoGPT 那一列是拿来对照的：它最小、可读，但教的是训一个
 
 我一直觉得 coding agent 被讲得太玄了。把 Claude Code、Cursor 这类工具扒到底，核心是一个 while 循环套着一个大模型，外加七八个让它能真正动手的工具。难的从来不是这个循环，而是循环跑进真实世界以后要兜的那些底。CoreCoder 就是把这个核心老老实实写出来的最小版本。
 
-引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1645 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3664 行、净 3061 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
+引擎部分（循环、模型接口、上下文、工具、会话）去掉空行和注释是 1650 行。连最外层的 CLI、配置、打包一起算，整个包 26 个文件、物理 3688 行、净 3082 行，每个文件都短到能一口气读完。自 1161 行快照之后的增长都花在了看得见的功能上：plan mode、hooks、checkpoints，下文各有交代。
 
-它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。现在有 449 个离线测试，另有按需开启的真实 API 冒烟。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
+它真能跑：读写文件、执行 shell、派子 agent、分三层压上下文，还能随时把这趟烧掉的 token 和美元数报给你。任何要动你磁盘、要跑命令的调用，都会先停下来等你点头。离线测试在 Linux、macOS 和 Windows 上都会跑，真实 API 冒烟则按需开启。但能跑不是为了劝你拿去日用，而是为了让这份「注释」不撒谎：一个解释 agent 怎么运作的范例，自己得真能运作。
 
 代码来自一次公开拆解。公开的源码分析里，Claude Code 这类生产级 agent 暴露出不少关键架构，我挑出最核心的一层，用尽量少的代码诚实地复写了一遍。所以读 CoreCoder，约等于读一份基于公开源码分析的「可运行注释版」：讲的是这类 agent 的核心思路，而它本身只是最小复写，就摆在你机器上，随你拆、随你改。
 
@@ -242,6 +242,8 @@ corecoder --resume NEW_ID
 ```
 
 `NEW_ID` 用第二条命令打印的值。分支离线完成，原档一字不动。回合按存档里仍保留的用户消息从 1 开始编号，压缩摘要不占编号，但会和所选请求之前的消息一起留下。它不会找回已压缩掉的原文，也不会撤销文件改动或重跑旧工具。创建新档需要存档所在文件系统支持硬链接。
+
+手头有两份存档，不确定该接着用哪一份？跑 `corecoder --compare-sessions ORIGINAL_ID NEW_ID`。它只告诉你两份记录从开头共有多少条消息、各剩多少条，以及两边都还有内容时第一处不同在哪一条。不显示正文或工具结果，不改存档，也不连接模型。压缩摘要照存档里的样子参与比较；共同开头不代表两份存档一定有同一个来源。
 
 会话 ID 会先清洗成安全字符再拿去当文件名，存档统统落在 `~/.corecoder/sessions` 里，恶意会话名穿越不出去。undo 历史也一样落盘：快照写在 `~/.corecoder/checkpoints.json`，重启之后 `/undo` 照样能往回撤。每份快照还会记下这次编辑实际写出的字节；如果文件后来又被手工或 bash 改过，`/undo` 会保留后来的改动和快照，不会直接覆盖。`/tokens` 的费用估算读的是内置价目表，在 `~/.corecoder/pricing.json` 里写自己的价格就会盖掉对应条目，新模型、调价都不用等发版。
 

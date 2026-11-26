@@ -22,6 +22,76 @@ def isolated_sessions(monkeypatch, tmp_path):
     return root
 
 
+@pytest.mark.parametrize("left_tail,right_tail,shared,difference", [
+    ([], [], 1, None),
+    ([{"role": "assistant", "content": "private left"}], [], 1, None),
+    ([], [{"role": "assistant", "content": "private right"}], 1, None),
+    ([{"role": "assistant", "content": "private left"}],
+     [{"role": "assistant", "content": "private right"}], 1, 2),
+    ([{"role": "tool", "content": {"enabled": True}}],
+     [{"role": "tool", "content": {"enabled": 1}}], 1, 2),
+])
+def test_compare_sessions_reports_only_the_stored_prefix(
+    isolated_sessions, monkeypatch, capsys, left_tail, right_tail, shared, difference,
+):
+    left = [{"role": "user", "content": {"note": "private start", "step": 1}}, *left_tail]
+    right = [{"content": {"step": 1, "note": "private start"}, "role": "user"}, *right_tail]
+    session.save_session(left, "private-model-a", "left")
+    session.save_session(right, "private-model-b", "right")
+    before = {p.name: p.read_bytes() for p in isolated_sessions.iterdir()}
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--compare-sessions", "left", "right"])
+
+    cli.main()
+
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert f"Shared stored messages: {shared}" in result.out
+    assert f"Remaining messages: {len(left) - shared} left, {len(right) - shared} right" in result.out
+    assert "Left: left" in result.out and "Right: right" in result.out
+    assert "private" not in result.out
+    if difference is None:
+        assert "First different stored message:" not in result.out
+    else:
+        assert f"First different stored message: {difference}" in result.out
+    assert {p.name: p.read_bytes() for p in isolated_sessions.iterdir()} == before
+
+
+@pytest.mark.parametrize("args,reason", [
+    (["missing", "valid"], "not found"),
+    (["valid", "corrupt"], "invalid session file"),
+])
+def test_compare_sessions_reports_bad_inputs_without_partial_output(
+    isolated_sessions, monkeypatch, capsys, args, reason,
+):
+    session.save_session([], "m", "valid")
+    (isolated_sessions / "corrupt.json").write_text('{"model": "private", "messages": null}', encoding="utf-8")
+    before = {p.name: p.read_bytes() for p in isolated_sessions.iterdir()}
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--compare-sessions", *args])
+
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+
+    assert error.value.code == 1
+    result = capsys.readouterr()
+    assert result.out == "" and reason in result.err and "private" not in result.err
+    assert {p.name: p.read_bytes() for p in isolated_sessions.iterdir()} == before
+
+
+@pytest.mark.parametrize("other", [
+    ["--list-sessions"], ["--inspect-session", "one"], ["--resume", "one"],
+    ["--fork-session", "one", "--before-turn", "1"], ["--before-turn", "1"], ["-p", ""], ["--demo"],
+])
+def test_compare_sessions_cannot_start_another_mode(other, isolated_sessions, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--compare-sessions", "left", "right", *other])
+
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+
+    assert error.value.code == 2
+    assert "error:" in capsys.readouterr().err
+    assert not isolated_sessions.exists()
+
+
 def test_list_sessions_offline(isolated_sessions, monkeypatch, capsys):
     sid = session.save_session([
         {"role": "user", "content": "[note] 看上次的结果"},
