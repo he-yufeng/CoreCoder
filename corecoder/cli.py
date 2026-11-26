@@ -18,7 +18,7 @@ from .hooks import load_hooks
 from .llm import LLM, LiteLLM
 from .mcp import load_mcp_tools
 from .permissions import DEFAULT_STORE, Permission
-from .session import SavedSession, list_sessions, read_session, save_session
+from .session import SavedSession, fork_session, list_sessions, read_session, save_session
 from .tools import ALL_TOOLS
 
 console = Console()
@@ -37,14 +37,25 @@ def _parse_args():
     p.add_argument("--yes", action="store_true", help="Auto-approve every tool call (for scripts and CI)")
     p.add_argument("--demo", action="store_true", help="Run the offline scripted demo (no API key needed)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
-    p.add_argument("--list-sessions", action="store_true", help="List saved sessions offline")
-    p.add_argument("--inspect-session", metavar="ID", help="Check a saved session and show its metadata offline")
+    sessions = p.add_mutually_exclusive_group()
+    sessions.add_argument("--list-sessions", action="store_true", help="List saved sessions offline")
+    sessions.add_argument("--inspect-session", metavar="ID", help="Check a saved session and show its metadata offline")
+    sessions.add_argument("--fork-session", metavar="ID", help="Create a session before a retained turn, offline")
+    p.add_argument("--before-turn", type=int, metavar="N", help="Retained user turn to leave out (1-based, for --fork-session)")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     args = p.parse_args()
-    if args.inspect_session is not None and (args.list_sessions or args.demo or args.prompt is not None or args.resume is not None):
-        p.error("--inspect-session cannot be combined with --list-sessions, --demo, --prompt or --resume")
-    if args.list_sessions and (args.demo or args.prompt is not None or args.resume is not None):
-        p.error("--list-sessions cannot be combined with --demo, --prompt or --resume")
+    if (args.fork_session is None) != (args.before_turn is None):
+        p.error("--fork-session and --before-turn must be used together")
+    if args.before_turn is not None and args.before_turn < 1:
+        p.error("--before-turn must be positive")
+    if args.demo or args.prompt is not None or args.resume is not None:
+        for option, active in (
+            ("--list-sessions", args.list_sessions),
+            ("--inspect-session", args.inspect_session is not None),
+            ("--fork-session", args.fork_session is not None),
+        ):
+            if active:
+                p.error(f"{option} cannot be combined with --demo, --prompt or --resume")
     return args
 
 
@@ -79,9 +90,23 @@ def main():
     if args.inspect_session is not None:
         saved = _require_saved_session(args.inspect_session)
         console.print(
-            f"Session: {saved.session_id}\nModel: {saved.model}\nSaved: {saved.saved_at}\nMessages: {len(saved.messages)}",
+            f"Session: {saved.session_id}\nModel: {saved.model}\nSaved: {saved.saved_at}\n"
+            f"Messages: {len(saved.messages)}\nRetained turns: {len(saved.retained_turn_starts())}",
             markup=False,
         )
+        return
+
+    if args.fork_session is not None:
+        saved = _require_saved_session(args.fork_session)
+        try:
+            sid = fork_session(saved, args.before_turn)
+        except ValueError as exc:
+            err_console.print(str(exc), style="red", markup=False)
+            raise SystemExit(1) from None
+        except OSError:
+            err_console.print("Could not create a new session file.", style="red")
+            raise SystemExit(1) from None
+        console.print(f"Forked session: {sid}", markup=False)
         return
 
     if args.demo:

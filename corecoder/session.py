@@ -5,6 +5,7 @@ CoreCoder distills this to: JSON dump of messages + model config.
 """
 
 import json
+import logging
 import os
 import re
 import time
@@ -12,6 +13,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+
+from .context import ContextManager
 
 SESSIONS_DIR = Path.home() / ".corecoder" / "sessions"
 _SAFE_SESSION_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -43,10 +46,11 @@ def _session_path(session_id: str) -> Path:
 
 def save_session(messages: list[dict], model: str, session_id: str | None = None) -> str:
     """Save conversation to disk. Returns the session ID."""
+    return _write_session(messages, model, _normalize_session_id(session_id), create_only=False)
+
+
+def _write_session(messages: list[dict], model: str, session_id: str, *, create_only: bool) -> str:
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-
-    session_id = _normalize_session_id(session_id)
-
     data = {
         "id": session_id,
         "model": model,
@@ -54,7 +58,7 @@ def save_session(messages: list[dict], model: str, session_id: str | None = None
         "messages": messages,
     }
 
-    path = _session_path(session_id)
+    path = SESSIONS_DIR.resolve() / f"{session_id}.json" if create_only else _session_path(session_id)
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     staged = None
     try:
@@ -66,11 +70,17 @@ def save_session(messages: list[dict], model: str, session_id: str | None = None
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        staged.replace(path)
-        staged = None
+        if create_only:
+            os.link(staged, path)  # publish the complete file without replacing an existing name
+        else:
+            staged.replace(path)
+            staged = None
     finally:
         if staged is not None:
-            staged.unlink(missing_ok=True)
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                logging.getLogger(__name__).warning("Could not remove temporary session file")
     return session_id
 
 
@@ -80,6 +90,18 @@ class SavedSession:
     model: str
     saved_at: str
     messages: list[dict]
+
+    def retained_turn_starts(self) -> list[int]:
+        start = 2 if ContextManager.has_summary_prefix(self.messages) else 0
+        return [i for i in range(start, len(self.messages)) if self.messages[i]["role"] == "user"]
+
+
+def fork_session(saved: SavedSession, before_turn: int) -> str:
+    starts = saved.retained_turn_starts()
+    if not 1 <= before_turn <= len(starts):
+        raise ValueError(f"Turn {before_turn} is out of range. Retained turns: {len(starts)}.")
+    prefix = saved.messages[:starts[before_turn - 1]]
+    return _write_session(prefix, saved.model, _new_session_id(), create_only=True)
 
 
 class SessionFormatError(ValueError):
