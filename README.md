@@ -2,7 +2,7 @@
 
 # CoreCoder
 
-**The nanoGPT of coding agents. A 1.6k-line engine inside 3,700 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
+**The nanoGPT of coding agents. A 1.6k-line engine inside 3,707 readable lines of pure Python: understand how a coding agent actually works, then fork your own.**
 
 *learn from it · fork it · ship something better*
 
@@ -25,7 +25,7 @@
 
 | | CoreCoder | Claude Code | aider | nanoGPT |
 |---|---|---|---|---|
-| Lines of code | ~1,655 engine / 3,700 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
+| Lines of code | ~1,655 engine / 3,707 total | hundreds of thousands (closed) | tens of thousands of Python | ~600 (two files) |
 | Time to read it all | one afternoon | can't (closed) | a few days of slogging | one afternoon |
 | Breakpoint, change, rerun? | yes, every line | no | yes, but there's a lot | yes |
 | What it's for | understand one, then fork your own | production coding assistant | terminal pair-programming | minimal GPT for teaching |
@@ -36,7 +36,7 @@ The nanoGPT column is there as a reference point: minimal, readable, but it teac
 
 I've always felt coding agents get talked about as if they were arcane. Strip a tool like Claude Code or Cursor all the way down and the core is a `while` loop wrapped around a large model, plus seven or eight tools that let it actually do things. The hard part was never the loop; it's everything the loop has to cope with once it meets the real world. CoreCoder is the minimal version that writes that core out honestly.
 
-The engine (loop, model interface, context, tools, sessions) is 1,655 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,700 physical lines, 3,094 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
+The engine (loop, model interface, context, tools, sessions) is 1,655 lines once you drop blank lines and comments. Counting the outer CLI, config and packaging too, the whole package is 26 files: 3,707 physical lines, 3,101 net, every one short enough to read in a single sitting. The growth since the original 1,161-line snapshot went into visible features: plan mode, hooks and checkpoints, each documented below.
 
 And it really runs: reads and writes files, executes shell, spawns sub-agents, compacts context in three tiers, and tells you the tokens and dollars a run burned whenever you ask. Anything that would mutate your disk or run a command stops for your consent first. The offline suite runs on Linux, macOS and Windows, with a separate opt-in live smoke test. But the point of it running isn't to become your daily driver. It runs so the walkthrough can't lie: a reference that shows how an agent works has to actually work.
 
@@ -234,6 +234,8 @@ quit / exit      exit (Ctrl+C cancels the current round)
 Run `corecoder --list-sessions` to find a saved conversation. It shows the same model, save time and short prompt preview as `/sessions`, and skips files it cannot read. For one ID, `corecoder --inspect-session ID` checks the archive and prints its model, time, message count and retained user turn count without showing the conversation. Neither command needs an API key. Use `corecoder -r ID` to continue; it checks the archive before contacting any provider or MCP server. A save only replaces the archive after the new file is complete. If the write fails, the last complete save is still there.
 
 If the session is no longer in the recent list, try `corecoder --list-sessions "release checklist"`. It looks for that text in the ID, model name or the same short preview, ignoring case, and shows up to 20 matches. It does not search replies or tool output.
+
+For scripts, add `--json` to `--list-sessions`. The command writes an array of `id`, `model`, `saved_at` and `preview` records to stdout, or `[]` when nothing matches. The search, preview and 20-result limit are the same as the text view.
 
 To try the last prompt again without showing the model the first attempt, check the turn count and fork just before that prompt. If the original has three retained turns:
 

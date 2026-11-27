@@ -1,6 +1,7 @@
 """Interactive REPL - the user-facing terminal interface."""
 
 import argparse
+import json
 import os
 import sys
 
@@ -49,8 +50,11 @@ def _parse_args():
     sessions.add_argument("--fork-session", metavar="ID", help="Create a session before a retained turn, offline")
     sessions.add_argument("--compare-sessions", nargs=2, metavar=("LEFT", "RIGHT"), help="Compare two saved histories offline")
     p.add_argument("--before-turn", type=int, metavar="N", help="Retained user turn to leave out (1-based, for --fork-session)")
+    p.add_argument("--json", action="store_true", help="Print the session list as JSON (with --list-sessions)")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     args = p.parse_args()
+    if args.json and args.list_sessions is None:
+        p.error("--json requires --list-sessions")
     if (args.fork_session is None) != (args.before_turn is None):
         p.error("--fork-session and --before-turn must be used together")
     if args.before_turn is not None and args.before_turn < 1:
@@ -93,7 +97,10 @@ def main():
     args = _parse_args()
 
     if args.list_sessions is not None:
-        _show_sessions(args.list_sessions)
+        if args.json:
+            print(json.dumps(list_sessions(args.list_sessions)))
+        else:
+            _show_sessions(args.list_sessions)
         return
 
     if args.inspect_session is not None:

@@ -165,6 +165,46 @@ def test_list_sessions_empty_is_read_only(isolated_sessions, monkeypatch, capsys
     assert not isolated_sessions.exists()
 
 
+def test_json_session_catalog_has_only_visible_fields(isolated_sessions, monkeypatch, capsys):
+    session.save_session([
+        {"role": "user", "content": "检查发布"},
+        {"role": "assistant", "content": "not in the catalog"},
+    ], "local-model", "keep")
+    session.save_session([], "other-model", "skip")
+    before = {p.name: p.read_bytes() for p in isolated_sessions.iterdir()}
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions", "发布", "--json"])
+
+    cli.main()
+
+    result = capsys.readouterr()
+    assert result.err == ""
+    [row] = json.loads(result.out)
+    assert set(row) == {"id", "model", "saved_at", "preview"}
+    assert row["id"] == "keep" and row["model"] == "local-model"
+    assert row["preview"] == "检查发布"
+    assert "not in the catalog" not in result.out
+    assert {p.name: p.read_bytes() for p in isolated_sessions.iterdir()} == before
+
+
+def test_json_session_catalog_returns_empty_array(isolated_sessions, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions", "--json"])
+
+    cli.main()
+
+    assert json.loads(capsys.readouterr().out) == []
+    assert not isolated_sessions.exists()
+
+
+def test_session_catalog_json_cannot_start_an_agent(isolated_sessions, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--json"])
+
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+
+    assert error.value.code == 2
+    assert "--json requires --list-sessions" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("other", [["--resume", "old-id"], ["--prompt", "hello"], ["--demo"]])
 def test_list_sessions_cannot_start_another_mode(other, isolated_sessions, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions", *other])

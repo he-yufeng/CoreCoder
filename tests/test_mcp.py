@@ -166,16 +166,17 @@ def test_a_slow_server_times_out_the_call(mcp_config):
         stall.execute()
 
 
-def test_timeout_cancels_the_request_and_ignores_its_late_reply(mcp_config):
+def test_timeout_cancels_the_request_and_ignores_its_late_reply(mcp_config, monkeypatch):
     tools = load_mcp_tools(mcp_config)
     stall = next(t for t in tools if t.name == "mcp__fake__stall")
     echo = next(t for t in tools if t.name == "mcp__fake__echo")
     client = stall._client
-    client.call_timeout = 0.2
     request_id = client._next_id + 1
 
-    with pytest.raises(MCPError, match="no answer"):
-        stall.execute()
+    with monkeypatch.context() as timeout:
+        timeout.setattr(client, "call_timeout", 0.2)
+        with pytest.raises(MCPError, match="no answer"):
+            stall.execute()
     time.sleep(0.6)
     assert echo.execute(text="after") == "echo: after"
 
