@@ -61,6 +61,15 @@ def main():
             [cli, "--list-sessions", "BEFORE THE RESTART"], cwd=work, env=env, capture_output=True, text=True, check=True, timeout=20
         )
         assert "wheel-session" in filtered.stdout and not filtered.stderr
+        as_json = subprocess.run(
+            [cli, "--list-sessions", "BEFORE THE RESTART", "--json"], cwd=work, env=env,
+            capture_output=True, text=True, check=True, timeout=20,
+        )
+        assert not as_json.stderr
+        assert json.loads(as_json.stdout) == [{
+            "id": "wheel-session", "model": "fixture-model", "saved_at": "2026-01-01 12:00:00",
+            "preview": "saved before the restart",
+        }]
         assert original.read_bytes() == before
         inspected = subprocess.run([cli, "--inspect-session", "wheel-session"], cwd=work, env=env,
                                    capture_output=True, text=True, check=True)
