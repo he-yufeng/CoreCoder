@@ -57,6 +57,11 @@ def main():
                                  capture_output=True, text=True, check=True)
         assert "wheel-session" in catalog.stdout and "saved before the restart" in " ".join(catalog.stdout.split())
         assert "corrupt-session" not in catalog.stdout
+        filtered = subprocess.run(
+            [cli, "--list-sessions", "BEFORE THE RESTART"], cwd=work, env=env, capture_output=True, text=True, check=True, timeout=20
+        )
+        assert "wheel-session" in filtered.stdout and not filtered.stderr
+        assert original.read_bytes() == before
         inspected = subprocess.run([cli, "--inspect-session", "wheel-session"], cwd=work, env=env,
                                    capture_output=True, text=True, check=True)
         assert "Session: wheel-session" in inspected.stdout and "Model: fixture-model" in inspected.stdout
@@ -101,6 +106,7 @@ def main():
     print(json.dumps({"version": corecoder.__version__, "wheelSha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
                       "packageRoot": str(package), "matchingPythonFiles": len(sources),
                       "consoleExit": help_result.returncode, "sessionCatalogExit": catalog.returncode,
+                      "sessionFilterExit": filtered.returncode,
                       "sessionInspectExit": inspected.returncode, "invalidSessionExit": invalid.returncode,
                       "sessionForkExit": forked.returncode, "forkInspectExit": fork_inspected.returncode,
                       "sessionCompareExit": compared.returncode,

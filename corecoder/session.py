@@ -146,8 +146,9 @@ def load_session(session_id: str) -> tuple[list[dict], str] | None:
     return saved.messages, saved.model
 
 
-def list_sessions() -> list[dict]:
-    """List available sessions, newest first."""
+def list_sessions(query: str = "") -> list[dict]:
+    """List up to 20 sessions matching ID, model, or displayed preview."""
+    query = query.strip().casefold()
     sessions = []
     for f in sorted(SESSIONS_DIR.glob("*.json"), reverse=True):
         if f.stem != _normalize_session_id(f.stem):
@@ -163,11 +164,15 @@ def list_sessions() -> list[dict]:
             if message["role"] == "user" and isinstance(content, str) and content:
                 preview = content[:80]
                 break
+        if query and not any(query in field.casefold() for field in (f.stem, saved.model, preview)):
+            continue
         sessions.append({
             "id": f.stem,
             "model": saved.model,
             "saved_at": saved.saved_at,
             "preview": preview,
         })
+        if len(sessions) == 20:
+            break
 
-    return sessions[:20]  # cap at 20
+    return sessions

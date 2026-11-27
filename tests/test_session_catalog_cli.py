@@ -111,6 +111,37 @@ def test_list_sessions_offline(isolated_sessions, monkeypatch, capsys):
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize("query", ["OLDER-SNAPSHOT", "QWEN-LEGACY", "翻上次"])
+def test_list_sessions_searches_before_the_recent_limit(isolated_sessions, monkeypatch, capsys, query):
+    session.save_session([{"role": "user", "content": "翻上次的结果"}], "qwen-legacy", "older-snapshot")
+    for i in range(22):
+        session.save_session([], "latest-model", f"recent-{i:02}")
+    before = {p.name: p.read_bytes() for p in isolated_sessions.iterdir()}
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions", query])
+
+    cli.main()
+
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert "older-snapshot" in output.out
+    assert "recent-" not in output.out
+    assert {p.name: p.read_bytes() for p in isolated_sessions.iterdir()} == before
+
+
+def test_list_sessions_does_not_search_hidden_message_content(isolated_sessions, monkeypatch, capsys):
+    session.save_session([
+        {"role": "user", "content": "A" * 80 + "hidden-value"},
+        {"role": "assistant", "content": "hidden-value"},
+    ], "model", "saved")
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--list-sessions", "hidden-value"])
+
+    cli.main()
+
+    output = capsys.readouterr()
+    assert "No saved sessions match." in output.out
+    assert "hidden-value" not in output.out + output.err
+
+
 def test_list_sessions_skips_non_object_record(isolated_sessions, monkeypatch, capsys):
     sid = session.save_session([{"role": "user", "content": "keep this"}], "m")
     unreadable = isolated_sessions / "zz_not_a_session.json"

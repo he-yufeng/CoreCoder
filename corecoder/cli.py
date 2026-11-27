@@ -38,7 +38,13 @@ def _parse_args():
     p.add_argument("--demo", action="store_true", help="Run the offline scripted demo (no API key needed)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
     sessions = p.add_mutually_exclusive_group()
-    sessions.add_argument("--list-sessions", action="store_true", help="List saved sessions offline")
+    sessions.add_argument(
+        "--list-sessions",
+        nargs="?",
+        const="",
+        metavar="QUERY",
+        help="List saved sessions offline, optionally matching ID, model or preview",
+    )
     sessions.add_argument("--inspect-session", metavar="ID", help="Check a saved session and show its metadata offline")
     sessions.add_argument("--fork-session", metavar="ID", help="Create a session before a retained turn, offline")
     sessions.add_argument("--compare-sessions", nargs=2, metavar=("LEFT", "RIGHT"), help="Compare two saved histories offline")
@@ -51,7 +57,7 @@ def _parse_args():
         p.error("--before-turn must be positive")
     if args.demo or args.prompt is not None or args.resume is not None:
         for option, active in (
-            ("--list-sessions", args.list_sessions),
+            ("--list-sessions", args.list_sessions is not None),
             ("--inspect-session", args.inspect_session is not None),
             ("--fork-session", args.fork_session is not None),
             ("--compare-sessions", args.compare_sessions is not None),
@@ -61,10 +67,11 @@ def _parse_args():
     return args
 
 
-def _show_sessions():
-    sessions = list_sessions()
+def _show_sessions(query: str = ""):
+    sessions = list_sessions(query)
     if not sessions:
-        console.print("[dim]No saved sessions.[/dim]")
+        message = "No saved sessions match." if query.strip() else "No saved sessions."
+        console.print(message, style="dim")
     for s in sessions:
         console.print(f"  {s['id']} ({s['model']}, {s['saved_at']}) {s['preview']}", markup=False)
 
@@ -85,8 +92,8 @@ def _require_saved_session(session_id: str) -> SavedSession:
 def main():
     args = _parse_args()
 
-    if args.list_sessions:
-        _show_sessions()
+    if args.list_sessions is not None:
+        _show_sessions(args.list_sessions)
         return
 
     if args.inspect_session is not None:
