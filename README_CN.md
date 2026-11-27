@@ -94,14 +94,14 @@ corecoder/
 ├── agent.py        agent 主循环 + 并行工具执行       240 行   ← 从这里开始读
 ├── llm.py          流式客户端 + 重试 + 成本统计       407 行
 ├── context.py      三层上下文压缩                     265 行
-├── session.py      会话存盘 / 续聊 + 路径穿越防护     166 行
+├── session.py      会话存盘 / 续聊 + 路径穿越防护     178 行
 ├── permissions.py  改动类工具的用户授权                81 行
 ├── hooks.py        工具调用前后的用户 shell 钩子        87 行
 ├── shell.py        POSIX shell 路由（Windows 走 Git Bash） 61 行
 ├── mcp.py          MCP 工具、文本资源和提示模板         413 行
 ├── mcp_http.py     远程 Streamable HTTP 连接           229 行
 ├── prompt.py       系统提示词                          41 行
-├── cli.py          REPL + 斜杠命令 + 一次性模式        448 行
+├── cli.py          REPL + 斜杠命令 + 一次性模式        472 行
 ├── config.py       环境变量配置                        61 行
 ├── checkpoints.py  /undo 快照与回滚                     125 行
 ├── demo.py         离线端到端演示                       101 行

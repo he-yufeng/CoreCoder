@@ -12,7 +12,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://github.com/he-yufeng/CoreCoder/actions/workflows/ci.yml/badge.svg)](https://github.com/he-yufeng/CoreCoder/actions)
-[![engine](https://img.shields.io/badge/engine-1650_LoC-blue)](article/00-index_EN.md)
+[![engine](https://img.shields.io/badge/engine-1655_LoC-blue)](article/00-index_EN.md)
 [![essays](https://img.shields.io/badge/source--reading-8_bilingual-orange)](article/00-index_EN.md)
 
 </div>
@@ -94,14 +94,14 @@ corecoder/
 ├── agent.py        agent loop + parallel tool exec       240 lines   ← start here
 ├── llm.py          streaming client + retry + cost        407 lines
 ├── context.py      three-tier context compaction          265 lines
-├── session.py      save / resume / fork                   166 lines
+├── session.py      save / resume / fork                   178 lines
 ├── permissions.py  consent for mutating tools              81 lines
 ├── hooks.py        Pre/PostToolUse shell hooks             87 lines
 ├── shell.py        POSIX shell routing (Git Bash on Windows) 61 lines
 ├── mcp.py          MCP tools, resources, prompt templates  413 lines
 ├── mcp_http.py     remote Streamable HTTP transport       229 lines
 ├── prompt.py       system prompt                           41 lines
-├── cli.py          REPL + slash commands + one-shot       448 lines
+├── cli.py          REPL + slash commands + one-shot       472 lines
 ├── config.py       env-var config                          61 lines
 ├── checkpoints.py  /undo snapshot and restore              125 lines
 ├── demo.py         offline end-to-end demo                 101 lines
