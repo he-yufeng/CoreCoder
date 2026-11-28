@@ -51,11 +51,11 @@ def _parse_args():
     sessions.add_argument("--fork-session", metavar="ID", help="Create a session before a retained turn, offline")
     sessions.add_argument("--compare-sessions", nargs=2, metavar=("LEFT", "RIGHT"), help="Compare two saved histories offline")
     p.add_argument("--before-turn", type=int, metavar="N", help="Retained user turn to leave out (1-based, for --fork-session)")
-    p.add_argument("--json", action="store_true", help="Print the session list as JSON (with --list-sessions)")
+    p.add_argument("--json", action="store_true", help="Print JSON with --list-sessions or --inspect-session")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     args = p.parse_args()
-    if args.json and args.list_sessions is None:
-        p.error("--json requires --list-sessions")
+    if args.json and args.list_sessions is None and args.inspect_session is None:
+        p.error("--json requires --list-sessions or --inspect-session")
     if (args.fork_session is None) != (args.before_turn is None):
         p.error("--fork-session and --before-turn must be used together")
     if args.before_turn is not None and args.before_turn < 1:
@@ -107,11 +107,18 @@ def main():
 
     if args.inspect_session is not None:
         saved = _require_saved_session(args.inspect_session)
-        console.print(
-            f"Session: {saved.session_id}\nModel: {saved.model}\nSaved: {saved.saved_at}\n"
-            f"Messages: {len(saved.messages)}\nRetained turns: {len(saved.retained_turn_starts())}",
-            markup=False,
-        )
+        turns = len(saved.retained_turn_starts())
+        if args.json:
+            print(json.dumps({
+                "id": saved.session_id, "model": saved.model, "saved_at": saved.saved_at,
+                "stored_messages": len(saved.messages), "retained_turns": turns,
+            }))
+        else:
+            console.print(
+                f"Session: {saved.session_id}\nModel: {saved.model}\nSaved: {saved.saved_at}\n"
+                f"Messages: {len(saved.messages)}\nRetained turns: {turns}",
+                markup=False,
+            )
         return
 
     if args.export_session is not None:

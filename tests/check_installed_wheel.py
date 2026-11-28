@@ -76,6 +76,16 @@ def main():
         assert "Session: wheel-session" in inspected.stdout and "Model: fixture-model" in inspected.stdout
         assert "Messages: 3" in inspected.stdout and "Retained turns: 2" in inspected.stdout
         assert prefix[0]["content"] not in inspected.stdout
+        inspected_json = subprocess.run(
+            [cli, "--inspect-session", original.stem, "--json"], cwd=work, env=env,
+            capture_output=True, text=True, check=True, timeout=20,
+        )
+        assert not inspected_json.stderr
+        assert json.loads(inspected_json.stdout) == {
+            "id": "wheel-session", "model": "fixture-model", "saved_at": "2026-01-01 12:00:00",
+            "stored_messages": 3, "retained_turns": 2,
+        }
+        assert original.read_bytes() == before
         forked = subprocess.run([cli, "--fork-session", "wheel-session", "--before-turn", "2"], cwd=work, env=env,
                                  capture_output=True, text=True, check=True, timeout=20)
         assert forked.stdout.startswith("Forked session: ") and not forked.stderr
@@ -130,7 +140,8 @@ def main():
                       "packageRoot": str(package), "matchingPythonFiles": len(sources),
                       "consoleExit": help_result.returncode, "sessionCatalogExit": catalog.returncode,
                       "sessionFilterExit": filtered.returncode,
-                      "sessionInspectExit": inspected.returncode, "invalidSessionExit": invalid.returncode,
+                      "sessionInspectExit": inspected.returncode, "sessionInspectJsonExit": inspected_json.returncode,
+                      "invalidSessionExit": invalid.returncode,
                       "sessionForkExit": forked.returncode, "forkInspectExit": fork_inspected.returncode,
                       "sessionCompareExit": compared.returncode, "sessionExportExit": exported.returncode,
                       "resourceTestsExit": result}, indent=2))

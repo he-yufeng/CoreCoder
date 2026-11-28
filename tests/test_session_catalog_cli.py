@@ -249,6 +249,49 @@ def test_inspect_session_only_prints_metadata(isolated_sessions, monkeypatch, ca
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize("summarized", [False, True])
+def test_inspect_session_json_reports_counts_without_dialogue(isolated_sessions, monkeypatch, capsys, summarized):
+    history = [
+        {"role": "user", "content": "private question"},
+        {"role": "assistant", "content": "private answer", "reasoning_content": "private reasoning"},
+        {"role": "tool", "tool_call_id": "fixture_call", "content": "private tool output"},
+    ]
+    if summarized:
+        history[:0] = [
+            {"role": "user", "content": "[Hard context reset]\nprivate recap"},
+            {"role": "assistant", "content": "Context restored. Continuing from where we left off."},
+        ]
+    isolated_sessions.mkdir()
+    path = isolated_sessions / "saved.json"
+    path.write_text(json.dumps({"model": "研究模型", "messages": history}), encoding="utf-8")
+    before = path.read_bytes()
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--inspect-session", "saved", "--json"])
+
+    cli.main()
+
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert json.loads(result.out) == {
+        "id": "saved", "model": "研究模型", "saved_at": "?",
+        "stored_messages": len(history), "retained_turns": 1,
+    }
+    assert list(isolated_sessions.iterdir()) == [path] and path.read_bytes() == before
+
+
+@pytest.mark.parametrize("exists,reason", [(False, "not found"), (True, "invalid session file")])
+def test_inspect_session_json_errors_leave_stdout_empty(isolated_sessions, monkeypatch, capsys, exists, reason):
+    if exists:
+        isolated_sessions.mkdir()
+        (isolated_sessions / "saved.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--inspect-session", "saved", "--json"])
+
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+
+    result = capsys.readouterr()
+    assert error.value.code == 1 and reason in result.err and not result.out
+
+
 def test_fork_keeps_complete_prefix_without_starting_a_run(isolated_sessions, monkeypatch, capsys):
     prefix = [
         {"role": "user", "content": "private starting point"},
