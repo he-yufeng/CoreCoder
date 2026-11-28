@@ -95,6 +95,19 @@ class SavedSession:
         start = 2 if ContextManager.has_summary_prefix(self.messages) else 0
         return [i for i in range(start, len(self.messages)) if self.messages[i]["role"] == "user"]
 
+    def to_markdown(self) -> str:
+        """Export retained dialogue without including structured tool data."""
+        start = 2 if ContextManager.has_summary_prefix(self.messages) else 0
+        sections = [f"# Session {self.session_id}"]
+        for message in self.messages[start:]:
+            role = message["role"]
+            content = message.get("content")
+            if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+                sections.append(f"## {role.capitalize()}\n\n{content}")
+        if len(sections) == 1:
+            sections.append("No retained dialogue.")
+        return "\n\n".join(sections) + "\n"
+
 
 def fork_session(saved: SavedSession, before_turn: int) -> str:
     starts = saved.retained_turn_starts()
