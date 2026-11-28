@@ -47,6 +47,7 @@ def _parse_args():
         help="List saved sessions offline, optionally matching ID, model or preview",
     )
     sessions.add_argument("--inspect-session", metavar="ID", help="Check a saved session and show its metadata offline")
+    sessions.add_argument("--export-session", metavar="ID", help="Export saved dialogue as Markdown offline")
     sessions.add_argument("--fork-session", metavar="ID", help="Create a session before a retained turn, offline")
     sessions.add_argument("--compare-sessions", nargs=2, metavar=("LEFT", "RIGHT"), help="Compare two saved histories offline")
     p.add_argument("--before-turn", type=int, metavar="N", help="Retained user turn to leave out (1-based, for --fork-session)")
@@ -63,6 +64,7 @@ def _parse_args():
         for option, active in (
             ("--list-sessions", args.list_sessions is not None),
             ("--inspect-session", args.inspect_session is not None),
+            ("--export-session", args.export_session is not None),
             ("--fork-session", args.fork_session is not None),
             ("--compare-sessions", args.compare_sessions is not None),
         ):
@@ -110,6 +112,11 @@ def main():
             f"Messages: {len(saved.messages)}\nRetained turns: {len(saved.retained_turn_starts())}",
             markup=False,
         )
+        return
+
+    if args.export_session is not None:
+        saved = _require_saved_session(args.export_session)
+        sys.stdout.buffer.write(saved.to_markdown().encode("utf-8"))
         return
 
     if args.fork_session is not None:

@@ -411,7 +411,67 @@ def test_fork_reports_created_session_even_if_staging_cleanup_fails(isolated_ses
     assert "Could not remove temporary session file" in caplog.text
 
 
-@pytest.mark.parametrize("mode", ["--inspect-session", "--resume", "--fork-session"])
+@pytest.mark.parametrize("prefix", [
+    ("[Context compressed - conversation summary]", "Got it, I have the context from our earlier conversation."),
+    ("[Hard context reset]", "Context restored. Continuing from where we left off."),
+])
+def test_export_keeps_only_retained_visible_text(prefix, isolated_sessions, monkeypatch, capsys):
+    marker, ack = prefix
+    history = [
+        {"role": "user", "content": f"{marker}\nprivate summary"},
+        {"role": "assistant", "content": ack},
+        {"role": "system", "content": "private system message"},
+        {"role": "user", "content": "你好\n\n`next step`"},
+        {"role": "assistant", "content": "Visible answer.",
+         "tool_calls": [{"function": {"arguments": "private arguments"}}], "reasoning_content": "private reasoning"},
+        {"role": "tool", "content": "private tool response"},
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "private call"}]},
+        {"role": "user", "content": {"note": "private structured data"}},
+        {"role": "user", "content": f"{marker}\nQuoted in dialogue"},
+    ]
+    isolated_sessions.mkdir()
+    (isolated_sessions / "fixture.json").write_text(
+        json.dumps({"model": "fixture-model", "messages": history}, ensure_ascii=False), encoding="utf-8",
+    )
+    before = {p.name: p.read_bytes() for p in isolated_sessions.iterdir()}
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--export-session", "fixture"])
+
+    for _ in range(2):
+        cli.main()
+        result = capsys.readouterr()
+        assert result.err == ""
+        assert result.out == (
+            "# Session fixture\n\n## User\n\n你好\n\n`next step`\n\n"
+            "## Assistant\n\nVisible answer.\n\n"
+            f"## User\n\n{marker}\nQuoted in dialogue\n"
+        )
+    assert {p.name: p.read_bytes() for p in isolated_sessions.iterdir()} == before
+
+
+def test_export_empty_dialogue_has_no_hidden_content(isolated_sessions, monkeypatch, capsys):
+    session.save_session([{"role": "user", "content": "  "}, {"role": "tool", "content": "hidden"}], "m", "empty")
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--export-session", "empty"])
+
+    cli.main()
+
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert result.out == "# Session empty\n\nNo retained dialogue.\n"
+
+
+@pytest.mark.parametrize("other", [["--resume", "id"], ["-p", ""], ["--demo"], ["--list-sessions"], ["--json"]])
+def test_export_session_rejects_conflicting_modes(other, isolated_sessions, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["corecoder", "--export-session", "fixture", *other])
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    result = capsys.readouterr()
+    assert error.value.code == 2 and not result.out
+    diagnostic = "requires --list-sessions" if other == ["--json"] else "--export-session"
+    assert diagnostic in result.err
+    assert not isolated_sessions.exists()
+
+
+@pytest.mark.parametrize("mode", ["--inspect-session", "--resume", "--fork-session", "--export-session"])
 @pytest.mark.parametrize("case,diagnostic", [
     ("missing", "not found"),
     ("unreadable", "could not read"),

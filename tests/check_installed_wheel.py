@@ -94,6 +94,20 @@ def main():
         assert "Remaining messages: 1 left, 0 right" in compared.stdout
         assert prefix[0]["content"] not in compared.stdout and not compared.stderr
         assert {path.name: path.read_bytes() for path in sessions.iterdir()} == archives
+        transcript = sessions / "dialogue.json"
+        transcript.write_text(json.dumps({"model": "fixture-model", "messages": [
+            {"role": "user", "content": "请继续"},
+            {"role": "assistant", "content": "Visible answer", "reasoning_content": "private reasoning"},
+            {"role": "tool", "content": "private tool output"},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        original_transcript = transcript.read_bytes()
+        exported = subprocess.run(
+            [cli, "--export-session", transcript.stem], cwd=work, env=env | {"PYTHONIOENCODING": "ascii"},
+            capture_output=True, check=True, timeout=20,
+        )
+        expected_transcript = "# Session dialogue\n\n## User\n\n请继续\n\n## Assistant\n\nVisible answer\n"
+        assert exported.stdout == expected_transcript.encode("utf-8")
+        assert not exported.stderr and transcript.read_bytes() == original_transcript
         version = subprocess.run([cli, "--version"], cwd=work, env=env, capture_output=True, text=True, check=True)
         assert version.stdout.strip() == f"corecoder {corecoder.__version__}"
         invalid = subprocess.run([cli, "--resume", "corrupt-session"], cwd=work, env=env,
@@ -118,7 +132,7 @@ def main():
                       "sessionFilterExit": filtered.returncode,
                       "sessionInspectExit": inspected.returncode, "invalidSessionExit": invalid.returncode,
                       "sessionForkExit": forked.returncode, "forkInspectExit": fork_inspected.returncode,
-                      "sessionCompareExit": compared.returncode,
+                      "sessionCompareExit": compared.returncode, "sessionExportExit": exported.returncode,
                       "resourceTestsExit": result}, indent=2))
     raise SystemExit(result)
 
